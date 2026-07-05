@@ -4,5 +4,6 @@
 *.db-wal
 *.db-shm
 
-# Build artifacts
-/balaur-memory
+# Toolchain
+node_modules/
+dist/

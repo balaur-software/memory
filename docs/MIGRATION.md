@@ -1,94 +1,89 @@
 # Migration map — Balaur → balaur-memory, piece by piece
 
-Source of truth for what moves, in what order, and what deliberately stays
-behind. Each phase lands with its tests and updates this file's status line.
-The parent repo is `github.com/alexradunet/balaur` (its memory layer:
-`internal/nodes`, `internal/knowledge`, `internal/search`, plus plans
-259–267 and the `docs/superpowers/` research this design is built on).
+Source of truth for what gets built, in what order, and what deliberately
+stays behind. Each phase lands with its tests + conformance scenarios and
+updates the status table below. The parent is
+`github.com/alexradunet/balaur`; its memory layer (`internal/nodes`,
+`internal/knowledge`, `internal/search`, plans 259–267, and the
+`docs/superpowers/` research) is the *design source*, not a code source.
 
-**Migration discipline:** phases are redesigns informed by Balaur's code,
-not mechanical ports — Balaur's versions carry `app.App` wiring, PocketBase-
-era naming, and UI assumptions that must not cross. Behavior parity is
-proven by porting the relevant tests alongside, and Balaur's golden recall
-harness (plan 261) becomes this library's conformance suite in Phase 3.
+**Discipline (post-ADR-0001):** phases are TypeScript implementations of
+the schema contract, **informed by** Balaur's Go code and its tests — never
+mechanical ports. Balaur's golden-recall design (plan 261) enters as
+conformance scenarios in Phase 3. Balaur itself keeps its in-tree Go layer,
+which plans 259–267 continue to improve independently — the two projects
+share a *design lineage* and, eventually, optionally, a *schema*, not code.
 
-## Phase 0 — contract (this repo, now)  ✅ scaffolded
+## Phase 0 — Go contract scaffold ✅ (superseded by 0.5)
 
-Draft API (`contract.go`, `types.go`, `consent.go`), design + this map, CI.
-Breaking the draft is free until Phase 1 ships; criticize it hard now.
+## Phase 0.5 — language pivot + full design ✅ this PR
+
+ADR-0001 (Bun/TS + guardrails), SCHEMA.md (the durable contract, invariants
+I1–I14), DESIGN.md (sync-first, vectors-in-never-models), CODING.md,
+CONFORMANCE.md, TS contract (`src/types.ts`, `src/consent.ts`,
+`src/contract.ts`), Bun toolchain + CI. Go files removed.
 
 ## Phase 1 — the spine
 
-From `internal/nodes` (nodes.go, schema.go, types.go, links.go, query.go,
-day.go) + `internal/store` (audit.go, scan/time helpers):
-- nodes + edges tables, status FSM, type registry with templates/validation
-- write choke points with fan-out (index upsert, on_day, wikilinks)
-- content-free audit sink (the forget-compatible discipline from day one)
-- `Provenance` recorded at create time (the parent's plan-227 lesson:
-  retrofitting provenance is the expensive path — new code writes it always)
-
-Replaces the `Store` interface with the concrete type. Port the nodes tests.
+`storage/` (adapter + bun impl + schema migrations + ulid), `spine.ts`:
+nodes/edges CRUD, status FSM, type registry with props validation, write
+fan-out (FTS upsert, on_day, audit), provenance-at-birth (I10). First
+conformance scenarios: I1, I3, I8, I11, I12.
 
 ## Phase 2 — recall
 
-From `internal/search` (index.go) + `internal/knowledge` (search.go,
-context-cache lessons):
-- disposable `index.db` FTS5 sidecar, rebuild-from-source, upsert/delete
-- ranking blend: bm25 × recency-decay × importance × log(1+use_count)
-  (parent plan 260/A2 math; reinforcement dampens decay)
-- term-extraction helpers (stopwords, proper nouns, carryover) as OPTIONAL
-  utilities — hosts may bring their own query terms
+`indexdb/fts.ts` + `indexdb/vectors.ts` + `recall.ts`: FTS maintenance +
+rebuild (I13), term helpers (stopwords, proper nouns — balaur plan 260's
+design), the ranking blend with pinned `RankingConfig` defaults, vector
+fusion from stored vectors. Scenarios: I2, I13.
 
 ## Phase 3 — the consent gate
 
-From `internal/knowledge` (knowledge.go, edit.go) + parent plans 262/263:
-- Propose with the write-time adjudication gate (created / merged_pending /
-  exists_active), conflict hints, pending-edit envelopes
-- Decide verbs incl. approve-superseding (compound commit + `supersedes`
-  edge)
-- golden conformance suite lands here (port + extend plan 261 fixtures)
+`consent.ts`: propose gate (I4), pending queue with conflict hints, decide
+verbs including approve-superseding (I5), pending-edit envelopes. The
+golden-recall personal fixture set lands as scenarios here (plan 261's
+design, upgraded to conformance format).
 
 ## Phase 4 — lifecycle
 
-New, library-first (parent research: forgetting + surfacing tracks):
-- surfacing axis enforcement in every read path
-- quarantine with review dates
-- `Forget` cascade + `ForgetReport` (tombstones, index scrub, stale flags,
-  NeedsOwner honesty)
+`lifecycle.ts`: surfacing enforcement across every read path, quarantine
+with `review_at`, the forget cascade + `ForgetReport.needsOwner` honesty
+(I6, I7), terminality (I8), no_match permanence (I9).
 
 ## Phase 5 — lineage + doctor
 
-New, library-first (parent research: lineage + self-measurement tracks):
-- `derived_from` lineage (`RecordDerivation`, `StaleDerivations`)
-- `Doctor` metadata-only report (decision rates, dead-weight/stale/duplicate
-  candidates, queue age) — trailing-baseline framing is the host's job
+`lineage.ts` (derivations, staleness propagation) and `doctor.ts`
+(metadata-only report: acceptance rates, dead-weight/stale/duplicate
+candidates, queue age — phrased as candidates, never actions).
 
-## Phase 6 — Balaur consumes
+## Phase 6 — interop, not import (reframed by ADR-0001)
 
-Balaur swaps `internal/nodes` + `internal/knowledge` + `internal/search`
-for this module behind its golden harness; in-tree copies are deleted the
-same day parity is green. Balaur keeps (not library concerns): cards/UI,
-turn pipeline, context assembly policy, recap generation, reflection and
-briefing jobs, heads, extensions.
+Balaur does not import this library. Options that stay open by design:
+- balaur (Go) mounts `memory.db` read-only over the schema contract (WAL,
+  I14) for recall experiments;
+- a future host app is built directly on this library;
+- nothing — the projects coexist, sharing research and design.
+No commitment is made here; the schema contract is what keeps every option
+cheap.
 
-## Deliberately not migrating
+## Deliberately not building
 
-- `remember`/`recall`/`search` agent-tool wrappers — tool surfaces are host
-  glue.
-- Recap/summary GENERATION — model calls; only their lineage lands here.
-- The knowledge context cache — an optimization to re-earn with a benchmark,
-  not to inherit.
-- Two-driver split (modernc + ncruces) — this library standardizes on
-  ncruces for both files.
+- Agent-tool wrappers (`remember`/`recall` tool shapes) — host glue.
+- Recap/summary *generation* — model work; only lineage lands here.
+- Balaur's knowledge context cache — an optimization to re-earn with a
+  benchmark if ever needed.
+- Sync/multi-device — a future layer on top of the schema, never inside the
+  library.
 
 ## Status
 
 | Phase | State |
 |---|---|
-| 0 contract | scaffolded 2026-07-05 |
+| 0 Go contract | superseded 2026-07-05 |
+| 0.5 pivot + design | in review (this PR) |
 | 1 spine | not started |
 | 2 recall | not started |
 | 3 consent gate | not started |
 | 4 lifecycle | not started |
 | 5 lineage + doctor | not started |
-| 6 balaur consumes | not started |
+| 6 interop | open by design |
