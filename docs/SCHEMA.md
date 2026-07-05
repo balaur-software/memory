@@ -1,0 +1,200 @@
+# SCHEMA.md — the data contract
+
+This file is the library's real API: the SQLite schema, its semantics, and
+its numbered invariants. Code in any language that honors this file is a
+conforming implementation. Changes here are contract changes: they bump
+`meta.schema_version` and ship with a migration.
+
+Two files:
+
+- **`memory.db`** — the record. Source of truth, backed up, treated as
+  precious.
+- **`index.db`** — the sidecar. FTS + vectors, derived entirely from
+  `memory.db`. **Deleting it is always safe** (I13); it rebuilds from source.
+
+Conventions: timestamps are ISO-8601 UTC with milliseconds
+(`2026-07-05T20:14:03.123Z`), stored as TEXT. IDs are lowercase ULIDs
+(26 chars, Crockford base32) — time-prefixed, so lexical order is creation
+order. JSON columns hold canonical JSON objects, never arrays at the top
+level, `{}` when empty.
+
+## memory.db
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+) STRICT;
+-- rows: schema_version (integer as text, starts "1"), store_id (ulid),
+--       created (timestamp)
+
+CREATE TABLE node_types (
+  name          TEXT PRIMARY KEY,          -- "memory", "skill", "note", "person", ...
+  born_status   TEXT NOT NULL DEFAULT 'active'
+                CHECK (born_status IN ('active','proposed')),
+  props_schema  TEXT NOT NULL DEFAULT '{}', -- prop key -> {type, required}
+  template      TEXT NOT NULL DEFAULT '{}', -- default props/body for new nodes
+  created       TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE nodes (
+  id         TEXT PRIMARY KEY,
+  type       TEXT NOT NULL REFERENCES node_types(name),
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL
+             CHECK (status IN ('proposed','active','archived','rejected',
+                               'quarantined','forgotten','merged')),
+  surfacing  TEXT NOT NULL DEFAULT 'always'
+             CHECK (surfacing IN ('always','ask','never')),
+  importance INTEGER NOT NULL DEFAULT 0 CHECK (importance BETWEEN 0 AND 5),
+  props      TEXT NOT NULL DEFAULT '{}',
+  origin     TEXT NOT NULL DEFAULT '',  -- provenance: host-defined source ref
+  author     TEXT NOT NULL DEFAULT '',  -- '' = owner; else third-party attribution
+  use_count  INTEGER NOT NULL DEFAULT 0,
+  last_used  TEXT,                      -- null until first Touch
+  review_at  TEXT,                      -- quarantine re-review date, else null
+  created    TEXT NOT NULL,
+  updated    TEXT NOT NULL
+) STRICT;
+CREATE INDEX idx_nodes_type_status ON nodes(type, status);
+CREATE INDEX idx_nodes_status_imp  ON nodes(status, importance DESC);
+
+CREATE TABLE edges (
+  id      TEXT PRIMARY KEY,
+  source  TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  target  TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  type    TEXT NOT NULL DEFAULT 'links',
+  context TEXT NOT NULL DEFAULT '',
+  created TEXT NOT NULL,
+  UNIQUE (source, target, type)
+) STRICT;
+CREATE INDEX idx_edges_target ON edges(target);
+
+CREATE TABLE pending_edits (
+  node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+  fields  TEXT NOT NULL DEFAULT '{}',  -- proposed field -> new value
+  archive INTEGER NOT NULL DEFAULT 0 CHECK (archive IN (0,1)),
+  origin  TEXT NOT NULL DEFAULT '',
+  author  TEXT NOT NULL DEFAULT '',
+  created TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE derivations (          -- lineage: what was built from what
+  artifact TEXT NOT NULL,           -- node id OR host ref ("host:recap:2026-07-04")
+  source   TEXT NOT NULL,           -- node id OR host ref
+  stale    INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0,1)),
+  created  TEXT NOT NULL,
+  PRIMARY KEY (artifact, source)
+) STRICT;
+
+CREATE TABLE audit_log (
+  id     TEXT PRIMARY KEY,
+  at     TEXT NOT NULL,
+  actor  TEXT NOT NULL CHECK (actor IN ('owner','agent','system')),
+  action TEXT NOT NULL,             -- "node.create", "consent.approve", "forget.cascade", ...
+  ref    TEXT NOT NULL DEFAULT '',  -- node/edge id — never content
+  ok     INTEGER NOT NULL DEFAULT 1 CHECK (ok IN (0,1)),
+  meta   TEXT NOT NULL DEFAULT '{}' -- ids, counts, flags — never quoted text
+) STRICT;
+CREATE INDEX idx_audit_at ON audit_log(at);
+```
+
+## index.db (disposable)
+
+```sql
+CREATE VIRTUAL TABLE nodes_fts USING fts5(
+  id UNINDEXED, kind UNINDEXED, title, content, extra
+);
+CREATE TABLE vectors (
+  id    TEXT NOT NULL,              -- node id
+  model TEXT NOT NULL,              -- host-declared vector-space identity
+  dim   INTEGER NOT NULL,
+  vec   BLOB NOT NULL,              -- little-endian float32, length = dim*4
+  PRIMARY KEY (id, model)
+) STRICT;
+```
+
+## System edge types
+
+| type | source → target | written by | meaning |
+|---|---|---|---|
+| `links` | any → any | host | generic association (default) |
+| `on_day` | node → day node | library | episodic anchor at creation |
+| `supersedes` | new → old | library (Decide) | validity chain; old is archived |
+| `merged_into` | duplicate → survivor | library | entity-resolution outcome |
+| `no_match` | a ↔ b | library (Decide) | owner ruled distinct — never re-propose (I9) |
+| `derived_from` | artifact → source | library (recordDerivation) | lineage; cascade root |
+
+## Status semantics
+
+| status | meaning | reachable from | leaves to |
+|---|---|---|---|
+| proposed | agent-authored, awaiting owner | (birth) | active, rejected |
+| active | part of memory | proposed, archived, quarantined | archived, quarantined, forgotten |
+| archived | soft-retired; recallable only by direct query | active | active, forgotten |
+| rejected | owner said no; terminal | proposed | — |
+| quarantined | actively suppressed everywhere; ask-twice; optional `review_at` | active | active, forgotten |
+| forgotten | content destroyed (tombstone); terminal | active, archived, quarantined | — |
+| merged | duplicate folded into a survivor; terminal alias | active, proposed | — |
+
+## Invariants (conformance fixtures reference these by number)
+
+- **I1 — Consent boundary.** A node whose type has `born_status='proposed'`
+  enters as `proposed` when `author`/agent-authored, and only an owner
+  decision moves it to `active`/`rejected`. Owner-authored nodes are born
+  `active`.
+- **I2 — Recall filter.** Ambient recall (`recall`, `search`) returns only
+  `status='active' AND surfacing='always'` nodes. `surfacing='ask'` nodes
+  are returned only when the query names them (explicit term hit on title),
+  never via broad matching. `surfacing='never'` nodes are reachable only by
+  `getNode(id)`.
+- **I3 — Traversal filter.** Graph reads (`neighborhood`) return active
+  nodes only.
+- **I4 — Write-time gate.** `propose` MUST route: normalized-title equality
+  vs a pending proposal → merge into it (`merged_pending`); vs an active
+  node of the same type → no write at all (`exists_active`); else create
+  (`created`). Normalization: lowercase, collapse whitespace.
+- **I5 — Adjudication is compound and ordered.** `approve_superseding`
+  performs: activate new → archive old → write `supersedes` edge → audit.
+  A mid-sequence failure stops and surfaces; no silent rollback of audited
+  steps.
+- **I6 — Tombstone semantics.** `forget` sets `status='forgotten'`,
+  `title=''`, `body=''`, `props='{}'`, `origin=''`, `author=''`; clears
+  `pending_edits`; deletes the node's edges; scrubs it from `nodes_fts` and
+  `vectors`; marks `derivations` rows with it as `source` stale. The row,
+  `type`, and timestamps survive.
+- **I7 — Content-free forget audit.** Audit entries for forget-class actions
+  carry ids and counts only. No audit row anywhere carries node title/body
+  text.
+- **I8 — Terminality.** `rejected`, `forgotten`, `merged` have no outgoing
+  transitions.
+- **I9 — No re-litigation.** After a `no_match` edge exists between two
+  nodes, the library never again proposes them as duplicates/merge
+  candidates.
+- **I10 — Provenance at birth.** Every insert into `nodes` sets `origin`
+  (host-supplied; `''` only for owner-manual creations). `author` is set
+  whenever content carries a third party's words.
+- **I11 — Timestamps and IDs.** All times UTC ISO-8601 with ms; all ids
+  lowercase ULID. `updated >= created` always.
+- **I12 — Audit coverage.** Every mutation of `nodes`, `edges`,
+  `pending_edits`, and every decision writes exactly one audit row
+  (compound decisions: one per step plus one summary).
+- **I13 — Disposable index.** Deleting `index.db` loses no information;
+  `rebuildIndex()` reconstructs it from `memory.db` exactly (FTS rows for
+  active nodes only; vectors are re-suppliable by the host).
+- **I14 — Single writer.** One `Store` instance owns writes to a given
+  `memory.db`. WAL mode permits concurrent external readers (e.g., a future
+  balaur mounting the file read-only).
+
+## Divergences from balaur (deliberate)
+
+- ULIDs, not 15-char PocketBase-style ids; strict ISO timestamps, not
+  `2006-01-02 15:04:05.000Z`.
+- `importance`, `surfacing`, provenance are real columns, not `props` keys —
+  they carry invariants; JSON is for host-defined data only.
+- Pending edits are a table, not a `props` envelope — the queue is queryable.
+- `STRICT` tables throughout.

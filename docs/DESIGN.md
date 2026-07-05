@@ -1,125 +1,142 @@
 # balaur-memory — design
 
-The memory layer of a personal life OS, as a standalone Go library. This file
-records the architecture and the decided tradeoffs. If code and prose
-disagree, code wins and this file gets fixed.
+The memory layer of a personal life OS, as a standalone TypeScript library on
+Bun. This file records the architecture and decided tradeoffs. If code and
+prose disagree, code wins and this file gets fixed. The durable contract
+lives one level down, in [SCHEMA.md](SCHEMA.md) — this file describes the
+reference implementation of it.
 
 ## The bet
 
 Memory quality does not live in the storage engine. It lives in the write
 path (adjudication), lineage, ranking, lifecycle, and consent — the layers
-above storage. So storage stays deliberately boring, and this library is the
-layer above.
-
-Evidence behind the bet (from the extraction research, mid-2026):
-write-time conflict adjudication beats recall-time reconciliation by a wide
-margin on stale-memory benchmarks; every field anti-pattern list starts with
-"vector-DB-as-memory"; and the production systems that endure converge on
-metadata-only self-measurement, human-adjudicated identity, and
-append-then-supersede lifecycles. The parent repo's plans 259–267 and
-`docs/superpowers/` research carry the full citations.
+above storage. Storage stays deliberately boring (SQLite, two files), and
+the *schema* — not this code — is the 40-year contract
+([ADR-0001](adr/0001-bun-typescript.md)).
 
 ## Architecture
 
 ```
-host app (Balaur, a CLI, anything)
-  │  renders the consent queue, calls models, schedules jobs
+host app (a life-OS UI, a CLI, an agent runtime — hosts own models & pixels)
+  │  renders the consent queue · embeds text into vectors · schedules jobs
   ▼
-memory (this library — deterministic, model-free)
-  ├── spine: nodes + edges + status FSM + type registry
-  ├── consent: proposals, adjudication gate, decisions
-  ├── recall: FTS5 + ranking blend + optional embedder fusion
-  ├── lineage: derived_from sources, staleness propagation
-  ├── lifecycle: supersede, surfacing policy, quarantine, forget
-  └── doctor: metadata-only health signals
+balaur-memory (this library — synchronous, deterministic, model-free)
+  ├── spine      nodes + edges + status FSM + type registry + fan-out
+  ├── consent    propose gate (I4) · pending queue · decide verbs (I5)
+  ├── recall     FTS + ranking blend + vector fusion (vectors in, never models)
+  ├── lineage    derived_from · staleness propagation
+  ├── lifecycle  surfacing · quarantine · forget cascade (I6/I7)
+  └── doctor     metadata-only health report (reports, never acts)
   ▼
-memory.db (source of truth)  +  index.db (disposable, rebuildable)
+memory.db (the record)          index.db (disposable — I13)
 ```
 
-### Storage
+### Synchronous by design
 
-- **Two SQLite files.** `memory.db` is the record; `index.db` (FTS5 tables +
-  embedding vectors) is a disposable sidecar — deleting it is always safe,
-  it rebuilds from source. This split is inherited from Balaur where it is
-  proven; it also makes the hardest part of index-erasure trivial (rebuild
-  IS the guarantee).
-- **Driver:** `github.com/ncruces/go-sqlite3` (wazero) — CGO-free with FTS5
-  included, one driver for both files. Decided; revisit only with a
-  benchmark.
-- **No ANN index, no graph engine.** At personal scale (≤100k nodes),
-  brute-force cosine is milliseconds and recursive CTEs cover traversal.
-  Adopting ChromaDB/Kuzu-class engines trades the library's whole pitch
-  (one file, no services, decades-stable format) for capacity nobody's life
-  needs. Re-open only if a measured workload says otherwise.
+`bun:sqlite` is synchronous, and at personal scale every operation is
+sub-millisecond to low-millisecond. The library embraces this: **every API
+is synchronous**. No promises, no callbacks, no internal concurrency, no
+event emitters. The one thing that is genuinely async in a memory system —
+embedding text with a model — is pushed out of the library entirely:
 
-### The model-free rule
+### Vectors in, never models
 
-The library NEVER calls an LLM. No exceptions. Extraction, summarization,
-reflection, and composition belong to hosts; the library provides:
-- deterministic places for model outputs to land (proposals, derivations),
-- the consent boundary they must cross,
-- and the provenance they must carry.
+The library never calls a model and never holds an embedder. Hosts embed
+content and queries themselves (async, outside, with whatever local model
+they run) and hand in `Float32Array`s:
 
-The one model-adjacent seam is `Embedder` — an optional, host-supplied,
-local-only embedding function. Absent an embedder, every behavior is
-deterministic, offline, and free. That is the default and it is not a
-degraded mode.
+- `putVector(nodeId, model, vec)` — maintain the vector sidecar
+- `recall(terms, { queryVector?, model? })` — fuse lexical bm25 with cosine
+  over stored vectors of that model, reciprocal-rank style
 
-### The consent boundary
+No vector, no fusion — the lexical path alone is the deterministic default,
+and it is not a degraded mode. Vector spaces are keyed by a host-declared
+`model` identity; vectors from different identities never mix.
 
-Statuses enforce it in the data layer: agent writes are born `proposed`;
-recall and traversal filter to `active` + surfaceable. The queue
-(`PendingQueue` / `Decide`) is the library's UI contract — hosts own pixels,
-the library owns the ledger. Compound decisions (approve-superseding) commit
-their full sequence and audit each step.
+### Ranking blend (the deterministic core of recall)
 
-### The three axes of a node
+```
+score(node) = bm25 × recency × importanceBoost × reinforcement
+  recency        = exp(-λ · daysSince(last_used ?? updated)),  λ dampened by importance
+  importanceBoost= 1 + importance/5
+  reinforcement  = 1 + 0.2·ln(1 + use_count)
+```
 
-1. **Status** — where in the lifecycle (proposed → active ⇄ archived,
-   quarantined, forgotten, merged, rejected).
-2. **Importance** — how much ambient budget it deserves (host semantics).
-3. **Surfacing** — whether it may appear unasked (`always/ask/never`).
-   Storage consent is not usage consent; this axis is what makes
-   facts-about-others and painful memories storable without being ambient.
+With a query vector present: RRF fusion, `Σ 1/(60 + rank_i)` across the
+lexical and cosine rankings. Constants live in one exported `RankingConfig`
+with these defaults; hosts may tune, conformance pins the defaults.
 
-### Forgetting, honestly
+### Storage adapter — the Bun containment seam
 
-`Forget` is erasure, `Quarantine` is suppression, and the API never
-conflates them. The cascade: tombstone content in place (row survives for
-referential integrity), drop edges, scrub indexes (rebuild-backed), flag
-derived artifacts stale via lineage, write a **content-free** audit entry.
-What the cascade cannot honestly reach — prose mentions in host-owned
-transcripts, exports already written — comes back in `ForgetReport.NeedsOwner`
-instead of being silently claimed. Lazy regeneration of stale derivations is
-the host's job on its own schedule.
+Only `src/storage/bun.ts` imports `bun:sqlite`. It implements a minimal
+interface (`open`, `close`, `exec`, `prepare→{all,get,run}`, `transaction`)
+consumed by everything else. Porting to `node:sqlite` or better-sqlite3 is
+one file plus the conformance run.
 
-### Self-measurement
+### Concurrency & ownership
 
-`Doctor` computes only from metadata the library already keeps — decision
-rates, touch counts, ages, queue depth. It reports candidates and never
-acts: dead-weight detection is Missing-Not-At-Random (a dormant memory may
-be a rare-critical fact), so auto-archiving from usage signals is forbidden
-by design, not by configuration.
+One `Store` instance is the single writer (I14); `memory.db` runs WAL so
+external processes may read concurrently (a Go balaur mounting the file
+read-only is the designed-for case). The library does not lock across
+processes — hosts that want multi-process writers are out of scope by design.
+
+### Errors and outcomes
+
+Domain routing is **data, not exceptions**: `propose` returns an `Outcome`,
+`decide` returns the resulting node, `forget` returns a `ForgetReport` with
+a `needsOwner` list — expected forks in the road are return values.
+Exceptions are for broken invariants and programmer error only: a single
+`MemoryError extends Error` with a `code` literal union
+(`"not_found" | "invalid_transition" | "type_unknown" | "props_invalid" |
+"store_closed" | "conflict"`), so hosts can switch on `code` without string
+matching.
+
+### Module map
+
+```
+src/
+  index.ts        public exports, version
+  store.ts        Store: open/close, migrations, transactions (the façade)
+  types.ts        domain types: branded ids, Status, Surfacing, Node, Edge, ...
+  consent.ts      Proposal/Outcome/Pending/Decision + gate + queue + decide
+  spine.ts        node/edge CRUD, FSM, type registry, write fan-out
+  recall.ts       terms, blend, fusion, search
+  lineage.ts      derivations, staleness
+  lifecycle.ts    surfacing, quarantine, forget cascade
+  doctor.ts       the report
+  storage/
+    adapter.ts    the minimal SQL interface (the seam)
+    bun.ts        bun:sqlite implementation — the ONLY file importing it
+    schema.ts     DDL from SCHEMA.md + the migration runner
+    ulid.ts       zero-dep lowercase ULID
+  indexdb/
+    fts.ts        FTS maintenance + rebuild (I13)
+    vectors.ts    Float32Array codec, cosine, RRF
+```
+
+### Performance envelope (why no ANN, no graph engine)
+
+At the design ceiling of 100k nodes: brute-force cosine over 10k vectors ×
+768 dims is ~8M multiply-adds — well under 50 ms in Bun with typed arrays,
+and typical stores are 10× smaller. FTS5 handles lexical at any personal
+scale. 1-hop traversals are indexed lookups. If a measured workload ever
+breaks this, the answer is a benchmark first and an index second — never a
+new database.
 
 ## Non-goals
 
-- No server, no daemon, no network listener.
-- No scheduler — hosts own cron.
-- No multi-tenant anything; one owner per store.
+- No server, daemon, scheduler, or network I/O of any kind.
+- No model calls, no embedder interface — vectors in, never models.
+- No multi-tenant, no multi-process writers, no sync protocol (a future
+  layer may add sync ON TOP of the schema; the library stays local).
+- No ORM, no query builder, no runtime dependencies. SQL is written by hand
+  next to the code that owns each table.
 - No opaque state: both files open in any SQLite tool.
 
 ## License
 
-AGPL-3.0-or-later today, matching the parent project, while the sole author
+AGPL-3.0-or-later, matching the parent project, while the sole author
 retains trivial relicensing freedom. Decide deliberately before accepting
-external contributions: AGPL on a *library* extends copyleft to consumers —
-right for sovereignty software, wrong for maximum adoption. If adoption ever
-becomes the goal, Apache-2.0 is the conventional switch and must happen
-while the contributor set is small enough to consent.
-
-## Naming
-
-Module `github.com/alexradunet/balaur-memory`, package `memory` (hosts may
-alias, e.g. `bmem "github.com/alexradunet/balaur-memory"`). Subpackages
-appear only when a seam earns one (spine/recall/lineage/doctor per doc.go),
-never speculatively.
+external contributions (library copyleft reaches consumers; Apache-2.0 is
+the conventional adoption-maximizing switch and must happen while the
+contributor set can consent).

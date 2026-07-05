@@ -1,71 +1,70 @@
 # balaur-memory
 
 > **A consent-gated, lineage-tracked, forgettable memory layer for personal AI.**
-> One SQLite file. One Go module. No services.
+> One SQLite file. One TypeScript library. No services, no models, no cloud.
 
-`balaur-memory` is the memory layer of a personal life OS, extracted from
-[Balaur](https://github.com/alexradunet/balaur) as a standalone library. It is
-the layer *above* storage — the part no existing memory library ships:
+`balaur-memory` is the memory layer of a personal life OS, designed from
+[Balaur](https://github.com/alexradunet/balaur)'s memory layer and the
+research behind it. It is the layer *above* storage — the part no existing
+memory library ships:
 
 - **Consent-gated writes** — an agent proposes; the owner decides. The
   proposal/adjudication queue is a data-layer contract, not prompt wording.
   Hosts render it however they like (cards, CLI, TUI).
-- **Write-time adjudication** — duplicate and conflicting memories are routed
-  at the moment of writing (add / update / no-op / supersede), not left for a
-  model to untangle at recall time. Field evidence says this is where memory
-  systems fail; this library makes it the front door.
-- **Provenance and lineage** — every memory knows the turn it came from; every
+- **Write-time adjudication** — duplicate and conflicting memories are
+  routed at the moment of writing (create / merge-into-pending / no-op /
+  supersede), not left for a model to untangle at recall time — the failure
+  mode the benchmarks say matters most.
+- **Provenance and lineage** — every memory knows where it came from; every
   derived artifact knows its sources. "Where did this come from?" and "what
   must change if this goes away?" are queries, not archaeology.
-- **A real memory lifecycle** — supersede chains, surfacing policy
+- **A real lifecycle** — supersede chains, surfacing policy
   (always / ask / never), quarantine for the painful cases, and true
   forgetting with honest cascade semantics. "Forgotten" never secretly means
   "suppressed".
-- **Self-measurement** — a doctor that reads quality signals from metadata the
-  library already keeps (acceptance rates, utilization, staleness, dead
-  weight) and reports to the owner. It never auto-acts.
-- **Recall as fusion** — FTS5 lexical recall with a deterministic ranking
-  blend (relevance × recency × importance × reinforcement), and an optional
-  `Embedder` interface for local semantic recall. Brute-force cosine is a
-  feature: at personal scale it is milliseconds, exact, and dependency-free.
+- **Self-measurement** — a doctor computing quality signals from metadata it
+  already keeps. It reports candidates; it never acts.
+- **Recall as fusion** — FTS5 relevance × recency × importance ×
+  reinforcement, optionally fused with cosine over **host-supplied**
+  vectors. Brute-force and exact, because at personal scale that is
+  milliseconds.
 
-## What it is not
+## The two contracts
 
-- **Not a vector database.** Embeddings are one optional retrieval signal,
-  never the memory system.
-- **Not a server.** It is a library over SQLite files you own and can open
-  with any SQLite tool.
-- **Not intelligent.** The library never calls a model. Extraction,
-  summarization, and reflection belong to the host; the library gives them
-  deterministic, auditable places to land.
-- **Not a framework.** Small packages, plain `database/sql`, no annotations,
-  no magic.
+1. **The schema** ([docs/SCHEMA.md](docs/SCHEMA.md)) — the durable,
+   language-neutral contract: two SQLite files (`memory.db` the record,
+   `index.db` the disposable sidecar), fourteen numbered invariants, opened
+   by any tool, any language, for decades. This is where the 40-year bet
+   lives.
+2. **The TypeScript API** ([src/contract.ts](src/contract.ts)) — the
+   reference implementation's surface: fully synchronous, zero runtime
+   dependencies, `bun:sqlite` contained behind a one-file adapter
+   ([ADR-0001](docs/adr/0001-bun-typescript.md)).
 
-## Design principles
-
-1. The deterministic substrate decides; models advise.
-2. The owner is the only actuator — the library reports and proposes, never
-   auto-acts on its own signals.
-3. Provenance before features — lineage is written at creation time, because
-   it cannot be retrofitted.
-4. Verbatim and derived are two artifacts. Sources are never summarized away.
-5. Storage is boring on purpose: SQLite, CGO-free, one file to back up,
-   one format frozen for decades.
+The library never calls a model. Hosts bring intelligence (and embeddings —
+*vectors in, never models*); the library brings a deterministic, auditable
+place for a life to land.
 
 ## Status
 
-**Phase 0 — contract.** The API surface in this repo is a reviewed draft
-(`contract.go`); implementation lands piece by piece, migrated and redesigned
-from Balaur's in-tree memory layer. See [docs/MIGRATION.md](docs/MIGRATION.md)
-for the phase map and [docs/DESIGN.md](docs/DESIGN.md) for the architecture.
+**Phase 0.5 — full design, pre-implementation.** The contract, schema,
+coding rules, and conformance design are in review; implementation lands
+piece by piece per [docs/MIGRATION.md](docs/MIGRATION.md). Balaur remains
+the design source and keeps its own in-tree Go memory layer; the projects
+share lineage and (optionally, later) a schema — not code.
 
-Balaur remains the first consumer and the proving ground: each phase ships
-here only after its shape survived real use there.
+## Docs
+
+| Doc | What it holds |
+|---|---|
+| [docs/SCHEMA.md](docs/SCHEMA.md) | The data contract: DDL, semantics, invariants I1–I14 |
+| [docs/DESIGN.md](docs/DESIGN.md) | Architecture: sync-first, vectors-in, ranking blend, module map |
+| [docs/CODING.md](docs/CODING.md) | The rules: strict TS, zero deps, SQL discipline, tests |
+| [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Scenario-file suite any implementation can run |
+| [docs/MIGRATION.md](docs/MIGRATION.md) | Phase map and status |
+| [docs/adr/](docs/adr/) | Decision records (0001: Bun + TypeScript) |
 
 ## License
 
-AGPL-3.0-or-later, matching the parent project. **Note for library adopters:**
-this is a deliberate early default while the sole author retains full
-relicensing freedom; see the license note in
-[docs/DESIGN.md](docs/DESIGN.md#license) before depending on it in non-AGPL
-work.
+AGPL-3.0-or-later, matching the parent project — with the library-adoption
+tradeoff documented in [docs/DESIGN.md](docs/DESIGN.md#license).
