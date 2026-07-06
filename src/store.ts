@@ -5,6 +5,7 @@
  * surface can no longer drift.
  */
 
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Conflict, Decision, EditChange, Outcome, Pending, Proposal } from "./consent.ts";
 import * as consent from "./consent.ts";
@@ -51,10 +52,28 @@ export class Store implements StoreContract {
     const now = opts.now ?? (() => new Date());
     const openDb = opts.openDb ?? openBunDb;
     const mem = openDb(join(opts.dir, "memory.db"));
-    const idx = openDb(join(opts.dir, "index.db"));
     migrateMemoryDb(mem, now);
-    migrateIndexDb(idx);
+    // The sidecar self-heals: a CORRUPT index.db is treated exactly like a
+    // missing one — dropped, recreated, rebuilt from the record (I13 covers
+    // corruption, not just deletion; review #3). memory.db never gets this
+    // treatment: the record is precious and a failure there is fatal.
+    const idxPath = join(opts.dir, "index.db");
+    let idx: ReturnType<OpenDb>;
+    let recovered = false;
+    try {
+      idx = openDb(idxPath);
+      migrateIndexDb(idx);
+    } catch {
+      for (const suffix of ["", "-wal", "-shm"]) rmSync(idxPath + suffix, { force: true });
+      idx = openDb(idxPath);
+      migrateIndexDb(idx);
+      recovered = true;
+    }
     const store = new Store({ mem, idx, now });
+    if (recovered) {
+      rebuildFts(idx, mem);
+      spine.audit(store.ctx, "system", "index.recover", "", true, { rebuilt: true });
+    }
     // Built-in episodic anchor type: every node links on_day to its creation
     // day (SCHEMA.md system edges). Hosts register their own types on top.
     mem.run(
@@ -90,6 +109,9 @@ export class Store implements StoreContract {
     return spine.mustGet(this.guard(), id);
   }
 
+  /** Edits an ACTIVE owner-authored node. CAREFUL: `props`, when present,
+   * REPLACES the whole object — read, modify, write for partial updates
+   * (deep-merge is its own footgun; the replacement is loud on purpose). */
   updateNode(id: NodeId, patch: { title?: string; body?: string; props?: Props }): Node {
     return spine.updateNode(this.guard(), id, patch);
   }

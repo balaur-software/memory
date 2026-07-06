@@ -13,7 +13,7 @@
  * deduplication, not censorship. (Documented behavior, pinned by test.)
  */
 
-import { lexicalCandidates, termsFromText } from "./recall.ts";
+import { lexicalCandidates, termsFromText, titleNamed } from "./recall.ts";
 import {
   audit,
   type Ctx,
@@ -96,7 +96,19 @@ function requireGatedType(ctx: Ctx, type: string): void {
     );
 }
 
-function findByNormalizedTitle(ctx: Ctx, type: string, title: string, status: string): Node | null {
+/**
+ * visibility: "any" sees every row (owner-side mechanics); "named" applies
+ * the I2 rule to what this lookup may REVEAL — surfacing='never' rows are
+ * invisible to it, while 'ask'/'always' are fair game because a normalized-
+ * title match means the caller literally named the title (review #1/#2).
+ */
+function findByNormalizedTitle(
+  ctx: Ctx,
+  type: string,
+  title: string,
+  status: string,
+  visibility: "any" | "named" = "any",
+): Node | null {
   const rows = ctx.mem.query<{ id: string }>("SELECT id FROM nodes WHERE type = ? AND status = ?", [
     type,
     status,
@@ -104,7 +116,9 @@ function findByNormalizedTitle(ctx: Ctx, type: string, title: string, status: st
   const wanted = normalizeTitle(title);
   for (const r of rows) {
     const node = mustGet(ctx, r.id as NodeId);
-    if (normalizeTitle(node.title) === wanted) return node;
+    if (normalizeTitle(node.title) !== wanted) continue;
+    if (visibility === "named" && node.surfacing === "never") continue;
+    return node;
   }
   return null;
 }
@@ -137,8 +151,11 @@ export function propose(ctx: Ctx, p: Proposal): Outcome {
     return { kind: "merged_pending", node };
   }
 
-  // 2. An active node already covers it — write nothing at all.
-  const active = findByNormalizedTitle(ctx, p.type, title, "active");
+  // 2. An active node already covers it — write nothing at all. A
+  // surfacing='never' cover is NOT revealed (I2 on the propose surface):
+  // the duplicate proposal is created instead, and the owner-side queue and
+  // doctor.duplicateCandidates carry the resolution (review #2).
+  const active = findByNormalizedTitle(ctx, p.type, title, "active", "named");
   if (active !== null) {
     audit(ctx, "agent", "consent.propose", active.id, true, { outcome: "exists_active", type: p.type });
     return { kind: "exists_active", node: active };
@@ -258,19 +275,25 @@ export function conflictsFor(ctx: Ctx, id: NodeId): Conflict[] {
   const out: Conflict[] = [];
   const seen = new Set<string>([id]);
 
-  const exact = findByNormalizedTitle(ctx, node.type, node.title, "active");
+  // Hints obey I2 (review #1): never-surfaced nodes are invisible here — a
+  // hint IS unprompted surfacing; ask nodes appear only when the pending
+  // item's own words name their title (titleNamed, the recall rule).
+  const exact = findByNormalizedTitle(ctx, node.type, node.title, "active", "named");
   if (exact !== null && !seen.has(exact.id)) {
     seen.add(exact.id);
     out.push({ nodeId: exact.id, title: exact.title, reason: "title_match" });
   }
 
   const terms = termsFromText(`${node.title} ${node.body}`);
+  const lowered = terms.map((t) => t.toLowerCase());
   for (const c of lexicalCandidates(ctx, terms, node.type, CONFLICT_CAP + 4)) {
     if (out.length >= CONFLICT_CAP) break;
     if (seen.has(c.id)) continue;
     seen.add(c.id);
     const hit = mustGet(ctx, c.id as NodeId);
     if (hit.status !== "active") continue; // fts holds active only, but stay defensive
+    if (hit.surfacing === "never") continue; // I2
+    if (hit.surfacing === "ask" && !titleNamed(hit.title, lowered)) continue; // I2
     out.push({ nodeId: hit.id, title: hit.title, reason: "lexical_overlap" });
   }
   return out;
@@ -293,8 +316,8 @@ function applyFields(ctx: Ctx, id: NodeId, fields: Readonly<Record<string, strin
     } else if (key === "body") {
       body = value;
     } else if (key === "importance") {
-      const n = Number.parseInt(value, 10);
-      if (Number.isNaN(n) || n < 0 || n > 5)
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 0 || n > 5)
         throw new MemoryError("props_invalid", "importance must be an integer between 0 and 5");
       importance = n;
     } else {

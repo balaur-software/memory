@@ -17,6 +17,7 @@ import {
   type NodeId,
   type NodeTypeSpec,
   type Props,
+  parseProps,
   type Status,
   type Surfacing,
 } from "./types.ts";
@@ -96,7 +97,7 @@ function rowToNode(r: NodeRow): Node {
     status: r.status as Status,
     surfacing: r.surfacing as Surfacing,
     importance: r.importance,
-    props: JSON.parse(r.props) as Props,
+    props: parseProps(r.props),
     origin: r.origin,
     author: r.author,
     useCount: r.use_count,
@@ -119,6 +120,19 @@ interface TypeRow extends SqlRow {
 export function registerType(ctx: Ctx, spec: NodeTypeSpec): void {
   const name = spec.name.trim();
   if (name === "") throw new MemoryError("props_invalid", "type name is required");
+  // Refuse born_status flips once nodes of the type exist — flipping the
+  // consent split on a live type would let the gate be bypassed (review #10).
+  const existing = ctx.mem.get<{ born_status: string }>("SELECT born_status FROM node_types WHERE name = ?", [
+    name,
+  ]);
+  if (existing !== null && existing.born_status !== spec.bornStatus) {
+    const inUse = ctx.mem.get<{ c: number }>("SELECT COUNT(*) AS c FROM nodes WHERE type = ?", [name]);
+    if ((inUse?.c ?? 0) > 0)
+      throw new MemoryError(
+        "conflict",
+        `cannot change born_status of type ${JSON.stringify(name)} while ${inUse?.c} node(s) of it exist`,
+      );
+  }
   ctx.mem.run(
     `INSERT INTO node_types (name, born_status, props_schema, template, created) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(name) DO UPDATE SET born_status = excluded.born_status,
@@ -194,8 +208,8 @@ export function insertNode(ctx: Ctx, input: CreateInput, status: Status, actor: 
   const title = input.title.trim();
   if (title === "") throw new MemoryError("props_invalid", "title is required");
   const importance = input.importance ?? 0;
-  if (importance < 0 || importance > 5)
-    throw new MemoryError("props_invalid", "importance must be between 0 and 5");
+  if (!Number.isInteger(importance) || importance < 0 || importance > 5)
+    throw new MemoryError("props_invalid", "importance must be an integer between 0 and 5");
   const t = typeRow(ctx, input.type);
   const { body, props } = applyTemplateAndValidate(t, input.body ?? "", input.props ?? {});
   const at = ctx.now();
@@ -421,6 +435,10 @@ export function transition(ctx: Ctx, id: NodeId, to: Status): Node {
     throw new MemoryError("invalid_transition", `cannot move ${id} from ${node.status} to ${to}`);
   }
   return ctx.mem.transaction(() => {
+    // Leaving active orphans any parked edit — clear it with the move (review #13).
+    if (node.status === "active" && to !== "active") {
+      ctx.mem.run("DELETE FROM pending_edits WHERE node_id = ?", [id]);
+    }
     // Leaving quarantine clears the re-review date; the state carries it, not the node.
     ctx.mem.run(
       "UPDATE nodes SET status = ?, review_at = CASE WHEN ? = 'quarantined' THEN review_at ELSE NULL END, updated = ? WHERE id = ?",
@@ -444,6 +462,11 @@ export function setSurfacing(ctx: Ctx, id: NodeId, s: Surfacing): void {
  * documented): the "(as of …)" freshness signal stays honest. */
 export function touch(ctx: Ctx, id: NodeId): void {
   const node = mustGet(ctx, id);
+  if (node.status !== "active")
+    throw new MemoryError(
+      "invalid_transition",
+      `cannot touch ${id} (status=${node.status}) — usage is an active-node signal`,
+    );
   ctx.mem.run("UPDATE nodes SET use_count = use_count + 1, last_used = ? WHERE id = ?", [
     ctx.now().toISOString(),
     id,

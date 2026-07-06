@@ -11,6 +11,7 @@
  */
 
 import type { SqlDb } from "../storage/adapter.ts";
+import { parseProps } from "../types.ts";
 
 export interface FtsDoc {
   readonly id: string;
@@ -51,7 +52,7 @@ export function rebuildFts(idx: SqlDb, mem: SqlDb): void {
       "SELECT id, type, title, body, props FROM nodes WHERE status = 'active'",
     );
     for (const r of rows) {
-      const props = JSON.parse(r.props) as Record<string, unknown>;
+      const props = parseProps(r.props) as Record<string, unknown>;
       idx.run("INSERT INTO nodes_fts (id, kind, title, content, extra) VALUES (?, ?, ?, ?, ?)", [
         r.id,
         r.type,
