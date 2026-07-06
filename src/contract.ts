@@ -42,6 +42,9 @@ export interface DoctorReport {
    * capped, never-surfaced excluded (PLANNING.md). Reports, never acts. */
   readonly dueCandidates: readonly NodeId[];
   readonly queueOldestDays: number | null;
+  /** PRAGMA integrity_check on the record — the health of the FILE itself
+   * (bit-rot, page corruption), distinct from content health. */
+  readonly integrityOk: boolean;
 }
 
 /** The draft contract. Phase 1 ships `class Store implements StoreContract`. */
@@ -168,6 +171,13 @@ export interface StoreContract {
   deleteVectors(model?: string): void;
   /** Rebuild index.db from memory.db (I13 — always safe, always exact). */
   rebuildIndex(): void;
+  /** Snapshot the record to a new file via VACUUM INTO — WAL-safe (a
+   * consistent snapshot without blocking writers), compacted, clean.
+   * The target must not exist: backups never overwrite. index.db is not
+   * backed up (disposable, I13); restore = place the file as memory.db in
+   * a fresh dir, open, rebuildIndex(). NEVER raw-copy memory.db while the
+   * store is open — the WAL holds recent writes the copy would lose. */
+  backup(toPath: string): void;
   /** Metadata-only health report — reports, never acts. */
   doctor(now?: Date): DoctorReport;
 }

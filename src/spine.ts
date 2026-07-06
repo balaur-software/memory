@@ -125,6 +125,14 @@ interface TypeRow extends SqlRow {
 export function registerType(ctx: Ctx, spec: NodeTypeSpec): void {
   const name = spec.name.trim();
   if (name === "") throw new MemoryError("props_invalid", "type name is required");
+  // "day" is the library's episodic anchor type — a host redefining its
+  // props_schema would brick every createNode via the on_day fan-out
+  // (review-3 A4). Reserved, loudly.
+  if (name === "day")
+    throw new MemoryError(
+      "conflict",
+      `"day" is a library-reserved type (the episodic anchor) — pick another name`,
+    );
   // Refuse born_status flips once nodes of the type exist — flipping the
   // consent split on a live type would let the gate be bypassed (review #10).
   const existing = ctx.mem.get<{ born_status: string }>("SELECT born_status FROM node_types WHERE name = ?", [
@@ -563,6 +571,17 @@ export function insertEdge(
       [source, target, edgeType],
     );
     if (existing === null) throw new MemoryError("conflict", "edge insert raced and vanished");
+    // A CLOSED edge must not be returned as if the link succeeded — the
+    // silent stale-validity result made "left then returned" invisible
+    // (review-3 A2). A closed fact stays closed; re-opening / multi-window
+    // validity is a deliberate open design question (TEMPORAL.md).
+    if (existing.valid_until !== null)
+      throw new MemoryError(
+        "conflict",
+        `edge ${existing.id} (${edgeType}) between these nodes exists and is CLOSED ` +
+          `(valid_until ${existing.valid_until}) — a closed fact stays closed; ` +
+          `reopen semantics are deliberately deferred (TEMPORAL.md)`,
+      );
     return rowToEdge(existing);
   }
   audit(ctx, actor, "edge.create", id, true, { type: edgeType });
