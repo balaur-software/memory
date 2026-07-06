@@ -69,8 +69,8 @@ into LoRA weights — not a queryable store; stale) and **memobase**
 | Actor-attributed content versioning with replay | Letta `BlockHistory` | **ADOPTED — fixed**: history dies with the tombstone | TEMPORAL.md Phase B (PR #18), I16 |
 | Additive-by-default when update-vs-new is ambiguous | Mem0 | **ALREADY COVERED** — the AUDN gate creates fresh proposals rather than silently overwriting; never-covered duplicates become new cards | consent.ts (I4) |
 | `redact` / `log-only` verdict outcomes | minni | **ALREADY COVERED** — `approve_edited` expresses redaction; `reject` records acknowledgment without storing | consent.ts (I5) |
-| Observations/Relations prose grammar for entity content | basic-memory | **DEFERRED** to a host-integration guide — a content convention, not a schema change | future HOSTING doc |
-| Episode schema (observation/thoughts/action/result) | LangMem | **DEFERRED** to the same guide — names a good shape for episodic memories | future HOSTING doc |
+| Observations/Relations prose grammar for entity content | basic-memory | **ADOPTED as convention** — bracketed-category observation prose | HOSTING.md §7 |
+| Episode schema (observation/thoughts/action/result) | LangMem | **ADOPTED as convention** — the four-part episodic body shape | HOSTING.md §7 |
 | `improve()` post-hoc self-correction | cognee | **REJECTED as a verb** — auto-acting conflicts with "reports, never acts"; at most a future doctor metric (reproposal-after-forget rate) | — |
 | Hot-path vs background formation framing | LangMem | **COVERED in positioning** — this library is deliberately hot-path-only, for determinism | DESIGN.md doctrine |
 | SQLite content store + disposable sidecar | txtai | **CITED as precedent** — external validation of the two-file split, proven over years at scale | the architecture itself |
