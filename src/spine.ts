@@ -6,7 +6,7 @@
  * construction rather than by discipline.
  */
 
-import { upsertFts } from "./indexdb/fts.ts";
+import { aliasTextFor, upsertFts } from "./indexdb/fts.ts";
 import type { SqlDb, SqlRow } from "./storage/adapter.ts";
 import { ulid } from "./storage/ulid.ts";
 import {
@@ -257,7 +257,7 @@ function fanOut(ctx: Ctx, node: Node): void {
       kind: node.type,
       title: node.title,
       content: node.body,
-      extra: typeof node.props["when_to_use"] === "string" ? (node.props["when_to_use"] as string) : "",
+      extra: extraText(ctx, node),
       status: node.status,
     });
   } catch {
@@ -354,6 +354,13 @@ export function updateNode(
   });
 }
 
+/** when_to_use + aliases — the two blessed extra-column conventions. */
+function extraText(ctx: Ctx, node: Node): string {
+  const hint = typeof node.props["when_to_use"] === "string" ? (node.props["when_to_use"] as string) : "";
+  const als = aliasTextFor(ctx.mem, node.id);
+  return [hint, als].filter((x) => x !== "").join(" ");
+}
+
 export function reindexNode(ctx: Ctx, node: Node): void {
   try {
     upsertFts(ctx.idx, {
@@ -361,7 +368,7 @@ export function reindexNode(ctx: Ctx, node: Node): void {
       kind: node.type,
       title: node.title,
       content: node.body,
-      extra: typeof node.props["when_to_use"] === "string" ? (node.props["when_to_use"] as string) : "",
+      extra: extraText(ctx, node),
       status: node.status,
     });
   } catch {

@@ -11,6 +11,7 @@ import type { Conflict, Decision, EditChange, Outcome, Pending, Proposal } from 
 import * as consent from "./consent.ts";
 import type { DoctorReport, RecallOptions, StoreContract } from "./contract.ts";
 import { doctor as doctorFn } from "./doctor.ts";
+import * as entities from "./entities.ts";
 import { rebuildFts } from "./indexdb/fts.ts";
 import * as vectors from "./indexdb/vectors.ts";
 import type { ForgetReport } from "./lifecycle.ts";
@@ -200,6 +201,30 @@ export class Store implements StoreContract {
    * index, flag derivations stale — and report what it could NOT reach. */
   forget(id: NodeId): ForgetReport {
     return lifecycle.forget(this.guard(), id);
+  }
+
+  // --- identity, phase A: names (docs/ENTITIES.md) ---
+
+  addAlias(id: NodeId, alias: string): void {
+    entities.addAlias(this.guard(), id, alias);
+  }
+
+  removeAlias(id: NodeId, alias: string): void {
+    entities.removeAlias(this.guard(), id, alias);
+  }
+
+  aliasesOf(id: NodeId): string[] {
+    return entities.aliasesOf(this.guard(), id);
+  }
+
+  /** Candidates, never a winner — the owner picks (ENTITIES.md). */
+  resolveRef(type: string, text: string): Node[] {
+    return entities.resolveRef(this.guard(), type, text);
+  }
+
+  /** Chain-walk merged_into to the living end (owner-confirmed default). */
+  survivorOf(id: NodeId): Node {
+    return entities.survivorOf(this.guard(), id);
   }
 
   // --- lineage (landed with the cascade; SCHEMA.md derivations) ---

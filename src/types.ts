@@ -83,6 +83,12 @@ export interface AuditEntry {
   readonly meta: Readonly<Record<string, string | number | boolean>>;
 }
 
+/** Shared normalization for titles, aliases, and referent text: lowercase,
+ * collapsed whitespace. One rule everywhere identity is compared. */
+export function normalizeText(s: string): string {
+  return s.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+}
+
 /**
  * The narrow validator all row-level JSON passes through (CODING.md): a
  * malformed props cell degrades to an empty object instead of bricking

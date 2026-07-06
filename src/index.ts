@@ -31,4 +31,4 @@ export type {
   Status,
   Surfacing,
 } from "./types.ts";
-export { MemoryError, SYSTEM_EDGE_TYPES } from "./types.ts";
+export { MemoryError, normalizeText, SYSTEM_EDGE_TYPES } from "./types.ts";

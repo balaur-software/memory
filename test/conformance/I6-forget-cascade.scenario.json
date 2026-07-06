@@ -3,8 +3,16 @@
   "invariants": ["I6", "I7", "I8"],
   "clock": "2026-07-05T12:00:00.000Z",
   "steps": [
-    { "op": "registerType", "name": "memory", "bornStatus": "proposed" },
-    { "op": "registerType", "name": "note", "bornStatus": "active" },
+    {
+      "op": "registerType",
+      "name": "memory",
+      "bornStatus": "proposed"
+    },
+    {
+      "op": "registerType",
+      "name": "note",
+      "bornStatus": "active"
+    },
     {
       "op": "propose",
       "as": "fact",
@@ -16,7 +24,18 @@
         "origin": "turn:t1"
       }
     },
-    { "op": "decide", "id": "@fact.id", "decision": { "kind": "approve" } },
+    {
+      "op": "decide",
+      "id": "@fact.id",
+      "decision": {
+        "kind": "approve"
+      }
+    },
+    {
+      "op": "addAlias",
+      "id": "@fact.id",
+      "alias": "xylo-alias"
+    },
     {
       "op": "createNode",
       "as": "note1",
@@ -27,32 +46,123 @@
         "origin": "t"
       }
     },
-    { "op": "link", "source": "@note1.id", "target": "@fact.id" },
-    { "op": "putVector", "id": "@fact.id", "model": "m1", "vec": [1, 0] },
-    { "op": "recordDerivation", "artifact": "host:recap:d1", "sources": ["@fact.id"] },
-    { "op": "forget", "id": "@fact.id", "as": "f1" },
-    { "op": "transition", "id": "@fact.id", "to": "active", "expectError": "invalid_transition" },
-    { "op": "forget", "id": "@fact.id", "expectError": "invalid_transition" }
+    {
+      "op": "link",
+      "source": "@note1.id",
+      "target": "@fact.id"
+    },
+    {
+      "op": "putVector",
+      "id": "@fact.id",
+      "model": "m1",
+      "vec": [1, 0]
+    },
+    {
+      "op": "recordDerivation",
+      "artifact": "host:recap:d1",
+      "sources": ["@fact.id"]
+    },
+    {
+      "op": "forget",
+      "id": "@fact.id",
+      "as": "f1"
+    },
+    {
+      "op": "transition",
+      "id": "@fact.id",
+      "to": "active",
+      "expectError": "invalid_transition"
+    },
+    {
+      "op": "forget",
+      "id": "@fact.id",
+      "expectError": "invalid_transition"
+    }
   ],
   "expect": [
-    { "sql": "SELECT status FROM nodes WHERE id = ?", "params": ["@fact.id"], "equals": "forgotten" },
-    { "sql": "SELECT title FROM nodes WHERE id = ?", "params": ["@fact.id"], "equals": "" },
-    { "sql": "SELECT props FROM nodes WHERE id = ?", "params": ["@fact.id"], "equals": "{}" },
-    { "sql": "SELECT origin FROM nodes WHERE id = ?", "params": ["@fact.id"], "equals": "" },
+    {
+      "sql": "SELECT status FROM nodes WHERE id = ?",
+      "params": ["@fact.id"],
+      "equals": "forgotten"
+    },
+    {
+      "sql": "SELECT title FROM nodes WHERE id = ?",
+      "params": ["@fact.id"],
+      "equals": ""
+    },
+    {
+      "sql": "SELECT props FROM nodes WHERE id = ?",
+      "params": ["@fact.id"],
+      "equals": "{}"
+    },
+    {
+      "sql": "SELECT origin FROM nodes WHERE id = ?",
+      "params": ["@fact.id"],
+      "equals": ""
+    },
     {
       "sql": "SELECT COUNT(*) FROM edges WHERE source = ? OR target = ?",
       "params": ["@fact.id", "@fact.id"],
       "equals": 0
     },
-    { "sql": "SELECT stale FROM derivations WHERE artifact = 'host:recap:d1'", "equals": 1 },
-    { "sql": "SELECT COUNT(*) FROM audit_log WHERE action = 'forget.cascade'", "equals": 1 },
-    { "sql": "SELECT COUNT(*) FROM audit_log WHERE meta LIKE '%xylograph%'", "equals": 0 },
-    { "sqlIndex": "SELECT COUNT(*) FROM nodes_fts WHERE id = ?", "params": ["@fact.id"], "equals": 0 },
-    { "sqlIndex": "SELECT COUNT(*) FROM vectors WHERE id = ?", "params": ["@fact.id"], "equals": 0 },
-    { "report": "f1", "path": "edgesDropped", "equals": 2 },
-    { "report": "f1", "path": "indexScrubbed", "equals": true },
-    { "report": "f1", "path": "flaggedStale", "equals": ["host:recap:d1"] },
-    { "report": "f1", "path": "needsOwner", "contains": "external:prior-exports" },
-    { "recall": { "terms": ["xylograph"] }, "titles": ["Meeting notes"] }
+    {
+      "sql": "SELECT stale FROM derivations WHERE artifact = 'host:recap:d1'",
+      "equals": 1
+    },
+    {
+      "sql": "SELECT COUNT(*) FROM audit_log WHERE action = 'forget.cascade'",
+      "equals": 1
+    },
+    {
+      "sql": "SELECT COUNT(*) FROM audit_log WHERE meta LIKE '%xylograph%'",
+      "equals": 0
+    },
+    {
+      "sqlIndex": "SELECT COUNT(*) FROM nodes_fts WHERE id = ?",
+      "params": ["@fact.id"],
+      "equals": 0
+    },
+    {
+      "sqlIndex": "SELECT COUNT(*) FROM vectors WHERE id = ?",
+      "params": ["@fact.id"],
+      "equals": 0
+    },
+    {
+      "report": "f1",
+      "path": "edgesDropped",
+      "equals": 2
+    },
+    {
+      "report": "f1",
+      "path": "indexScrubbed",
+      "equals": true
+    },
+    {
+      "report": "f1",
+      "path": "flaggedStale",
+      "equals": ["host:recap:d1"]
+    },
+    {
+      "report": "f1",
+      "path": "needsOwner",
+      "contains": "external:prior-exports"
+    },
+    {
+      "recall": {
+        "terms": ["xylograph"]
+      },
+      "titles": ["Meeting notes"]
+    },
+    {
+      "sql": "SELECT COUNT(*) FROM aliases WHERE node_id = ?",
+      "params": ["@fact.id"],
+      "equals": 0
+    },
+    {
+      "recall": {
+        "terms": ["xylo-alias"]
+      },
+      "titles": []
+    }
   ]
 }

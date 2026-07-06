@@ -4,10 +4,9 @@
  * the consent filter (I2) starts at write time. Losing index.db is always
  * safe (I13): rebuildFts reconstructs it exactly from memory.db.
  *
- * The `extra` column carries one blessed convention: a node's
- * `props.when_to_use` string, when present — a recall hint indexed
- * alongside title/body. (Phase 2 may refine this; the column is part of the
- * schema either way.)
+ * The `extra` column carries two blessed conventions: a node's
+ * `props.when_to_use` string, and (schema v2) the node's aliases — so an
+ * alias hit surfaces the node in recall (ENTITIES.md, owner-confirmed).
  */
 
 import type { SqlDb } from "../storage/adapter.ts";
@@ -22,9 +21,18 @@ export interface FtsDoc {
   readonly status: string;
 }
 
-function extraOf(props: Record<string, unknown>): string {
+function extraOf(props: Record<string, unknown>, aliasText = ""): string {
   const v = props["when_to_use"];
-  return typeof v === "string" ? v : "";
+  const hint = typeof v === "string" ? v : "";
+  return [hint, aliasText].filter((x) => x !== "").join(" ");
+}
+
+/** Space-joined aliases of a node, for the extra column. */
+export function aliasTextFor(mem: SqlDb, id: string): string {
+  return mem
+    .query<{ alias: string }>("SELECT alias FROM aliases WHERE node_id = ? ORDER BY alias", [id])
+    .map((r) => r.alias)
+    .join(" ");
 }
 
 /** Delete-then-insert so upsert is idempotent; non-active docs just delete. */
@@ -48,8 +56,18 @@ export function deleteFts(idx: SqlDb, id: string): void {
 export function rebuildFts(idx: SqlDb, mem: SqlDb): void {
   idx.transaction(() => {
     idx.run("DELETE FROM nodes_fts");
-    const rows = mem.query<{ id: string; type: string; title: string; body: string; props: string }>(
-      "SELECT id, type, title, body, props FROM nodes WHERE status = 'active'",
+    const rows = mem.query<{
+      id: string;
+      type: string;
+      title: string;
+      body: string;
+      props: string;
+      als: string;
+    }>(
+      `SELECT n.id, n.type, n.title, n.body, n.props,
+              COALESCE(GROUP_CONCAT(a.alias, ' '), '') AS als
+       FROM nodes n LEFT JOIN aliases a ON a.node_id = n.id
+       WHERE n.status = 'active' GROUP BY n.id`,
     );
     for (const r of rows) {
       const props = parseProps(r.props) as Record<string, unknown>;
@@ -58,7 +76,7 @@ export function rebuildFts(idx: SqlDb, mem: SqlDb): void {
         r.type,
         r.title,
         r.body,
-        extraOf(props),
+        extraOf(props, r.als),
       ]);
     }
   });
