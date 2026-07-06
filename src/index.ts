@@ -11,11 +11,11 @@ export type {
 } from "./consent.ts";
 export type {
   DoctorReport,
-  ForgetReport,
   RankingConfig,
   RecallOptions,
   StoreContract,
 } from "./contract.ts";
+export type { ForgetReport } from "./lifecycle.ts";
 export { DEFAULT_RANKING, termsFromText } from "./recall.ts";
 export { SCHEMA_VERSION } from "./storage/schema.ts";
 export { ulid } from "./storage/ulid.ts";
