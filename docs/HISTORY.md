@@ -1,0 +1,49 @@
+# HISTORY.md — how this library was built
+
+The build log: what landed, in what order, behind which PR. The library is
+standalone — no parent application, no host commitments. Everything below
+is its own history.
+
+**The standing discipline:** every phase is designed against the schema
+contract (SCHEMA.md) first; lands with unit tests + conformance scenarios
+in the same PR; passes `bun test` + `tsc --noEmit` (strict) + `biome`
+before push; and updates its docs in the same change. The merge is the
+ratification.
+
+## Phase log
+
+| Phase | Delivered | State |
+|---|---|---|
+| 0 — Go scaffold | a Go contract draft | superseded by 0.5 (ADR-0001) |
+| 0.5 — language pivot + full design | ADR-0001 (Bun/TS + the guardrails), SCHEMA.md (invariants I1–I14), DESIGN.md, CODING.md, CONFORMANCE.md, the TS contract | DONE (PR #2) |
+| 1 — the spine | storage adapter + migrations + ulid; nodes/edges CRUD, the status FSM, the type registry, write fan-out (FTS, on_day, audit), provenance at birth (I10) | DONE (PR #3) |
+| 2 — recall | FTS maintenance + rebuild (I13), term helpers, the ranking blend with pinned defaults, vector storage + cosine + RRF fusion | DONE (PR #4) |
+| 3 — the consent gate | propose with the write-time AUDN gate (I4), the pending queue + conflict hints, decide incl. approve_superseding (I5), edit envelopes, the golden personal fixtures | DONE (PR #5) |
+| 4 — lifecycle | quarantine + review_at, the honest forget cascade + needsOwner (I6/I7), terminality (I8) | DONE (PR #6) |
+| 5 — lineage + doctor | derivations + staleness; the metadata-only health report | DONE (PR #7) |
+| hardening — cold-review fix batch | consent-surface privacy seals, corrupt-index recovery, the guard set, parseProps, the audit-leak sentinel | DONE (PR #8) |
+| entities — design doc | ENTITIES.md: consent-gated identity resolution | DONE (PR #9) |
+| entities A — names | schema v2 (aliases + identity_pending), addAlias/removeAlias/aliasesOf, resolveRef, survivorOf, alias FTS indexing + forget amendments | DONE (PR #10) |
+| entities B — questions | deterministic rules R1–R3, suggestIdentities, the Pending tagged union (v0.2.0) | DONE (PR #11) |
+| entities C — verdicts | decideIdentity: the compound merge + no_match permanence (I9, both halves), merged joins the forgettable set (I8) | DONE (PR #12) |
+| entities D — the peer card | entityContext: the bounded, edge-carrying disambiguation primitive | DONE (PR #13) |
+
+13 of 14 invariants are conformance-pinned (I14, single writer, holds by
+construction). `Store implements StoreContract` is compiler-checked.
+
+## Deliberately out of scope
+
+- **Agent-tool wrappers** (`remember`/`recall` tool shapes) — host glue.
+- **Recap/summary generation** — model work; only lineage lands here
+  (vectors in, never models).
+- **Caching layers** — optimizations to re-earn with a benchmark if a
+  measured workload ever demands one.
+- **Sync/multi-device** — a future layer on top of the schema, never
+  inside the library.
+
+## What's next
+
+A host application, built from scratch on this library — and nothing here
+depends on it existing. The schema contract (SCHEMA.md) is what keeps
+every future direction cheap: any process, any language, any decade can
+open `memory.db` and be told the truth.

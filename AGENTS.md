@@ -1,8 +1,8 @@
 # balaur-memory project instructions
 
-The memory layer of a personal life OS as a standalone TypeScript library on
-Bun, designed from Balaur's memory layer and its research. Keep this file
-lean and high-signal.
+A standalone TypeScript library on Bun: the consent-gated memory layer of a
+personal life OS, built on its own research and its own schema contract — no
+parent application. Keep this file lean and high-signal.
 
 ## The load-bearing rules
 
@@ -43,7 +43,7 @@ parameters always; mutations only through the write choke points; throw
 
 ## Landing changes
 
-- `docs/MIGRATION.md`'s status table is canonical — update it in the change
-  that lands a phase.
+- `docs/HISTORY.md`'s phase log is canonical — update it in the change that
+  lands a phase.
 - Conventional commits. Never commit or push unless the owner explicitly
   asks.
