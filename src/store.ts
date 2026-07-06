@@ -5,7 +5,7 @@
  * surface can no longer drift.
  */
 
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Conflict, Decision, EditChange, Outcome, Pending, Proposal } from "./consent.ts";
 import * as consent from "./consent.ts";
@@ -294,5 +294,19 @@ export class Store implements StoreContract {
   rebuildIndex(): void {
     const ctx = this.guard();
     rebuildFts(ctx.idx, ctx.mem);
+  }
+
+  // --- backup (SCHEMA.md "Backup and restore"; review-3 G5) ---
+
+  /** Snapshot the record via VACUUM INTO: WAL-safe (reads a consistent
+   * snapshot including un-checkpointed writes, without blocking), and the
+   * output is compacted and forensically clean. Refuses an existing
+   * target — backups never overwrite. Audited content-free. */
+  backup(toPath: string): void {
+    const ctx = this.guard();
+    if (existsSync(toPath))
+      throw new MemoryError("conflict", "backup target already exists — backups never overwrite");
+    ctx.mem.run("VACUUM INTO ?", [toPath]);
+    spine.audit(ctx, "owner", "store.backup", "", true, {});
   }
 }
