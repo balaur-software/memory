@@ -59,8 +59,10 @@ export interface ForgetReport {
   /** What the cascade cannot honestly resolve alone — surfaced, never
    * silently claimed: possible prose mentions in other nodes
    * ("mention:<id>", best-effort lexical candidates on the forgotten
-   * title's words) and the standing truth that prior exports/backups may
-   * retain the content ("external:prior-exports"). */
+   * title's words), merged husks chained INTO this node ("husk:<id>" —
+   * they still hold content and just lost their survivor), and the
+   * standing truth that prior exports/backups may retain the content
+   * ("external:prior-exports"). */
   readonly needsOwner: readonly string[];
 }
 
@@ -87,6 +89,13 @@ export function forget(ctx: Ctx, id: NodeId): ForgetReport {
       if (c.id !== id) needsOwner.push(`mention:${c.id}`);
     }
   }
+  // Merged husks chained into this node — computed BEFORE edges drop.
+  for (const r of ctx.mem.query<{ source: string }>(
+    "SELECT source FROM edges WHERE target = ? AND type = 'merged_into'",
+    [id],
+  )) {
+    needsOwner.push(`husk:${r.source}`);
+  }
   needsOwner.push("external:prior-exports");
 
   let edgesDropped = 0;
@@ -94,6 +103,7 @@ export function forget(ctx: Ctx, id: NodeId): ForgetReport {
   ctx.mem.transaction(() => {
     edgesDropped = ctx.mem.run("DELETE FROM edges WHERE source = ? OR target = ?", [id, id]).changes;
     ctx.mem.run("DELETE FROM pending_edits WHERE node_id = ?", [id]); // envelopes carry content too
+    ctx.mem.run("DELETE FROM aliases WHERE node_id = ?", [id]); // aliases are content (I6 v2 amendment)
     flaggedStale = flagStaleBySource(ctx, id);
     ctx.mem.run("DELETE FROM derivations WHERE artifact = ?", [id]); // if it WAS derived, its lineage goes with it
     ctx.mem.run(

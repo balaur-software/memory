@@ -1,7 +1,8 @@
 # ENTITIES.md — consent-gated identity resolution (design)
 
-- **Status:** Design for review. Implementation phased below; no code in
-  this document's PR.
+- **Status:** Ratified. Phase A (names) shipped in PR #10; owner confirmed
+  the three open questions (no implicit suggestIdentities; aliases indexed
+  via FTS extra; survivorOf ships).
 - **Pins:** I9 (`no_match` permanence) finally gets its producer. Ships as
   **schema_version 2** and **v0.2.0** (one deliberate breaking change:
   `Pending` becomes a tagged union).

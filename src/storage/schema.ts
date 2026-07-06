@@ -7,7 +7,7 @@
 import type { SqlDb } from "./adapter.ts";
 import { ulid } from "./ulid.ts";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const MEMORY_DDL = `
 PRAGMA journal_mode = WAL;
@@ -103,18 +103,45 @@ CREATE TABLE IF NOT EXISTS vectors (
 ) STRICT;
 `;
 
-/** Apply the memory.db baseline (idempotent) and record meta rows. */
+// --- v2: identity resolution (docs/ENTITIES.md) ---
+const V2_DDL = `
+CREATE TABLE IF NOT EXISTS aliases (
+  alias   TEXT NOT NULL,
+  node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  source  TEXT NOT NULL CHECK (source IN ('owner','merge')),
+  created TEXT NOT NULL,
+  PRIMARY KEY (alias, node_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_aliases_node ON aliases(node_id);
+
+CREATE TABLE IF NOT EXISTS identity_pending (
+  a        TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  b        TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  evidence TEXT NOT NULL CHECK (evidence IN ('title_match','token_subset','alias_match')),
+  created  TEXT NOT NULL,
+  PRIMARY KEY (a, b)
+) STRICT;
+`;
+
+/** Apply the memory.db baseline + versioned deltas (idempotent). Fresh
+ * stores land directly on SCHEMA_VERSION; older stores upgrade in order.
+ * Never edit an applied delta — append and bump (CODING.md). */
 export function migrateMemoryDb(db: SqlDb, now: () => Date): void {
   db.exec(MEMORY_DDL);
   const version = db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'");
   if (version === null) {
+    db.exec(V2_DDL);
     const at = now().toISOString();
     db.run("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", [String(SCHEMA_VERSION)]);
     db.run("INSERT INTO meta (key, value) VALUES ('store_id', ?)", [ulid(now().getTime())]);
     db.run("INSERT INTO meta (key, value) VALUES ('created', ?)", [at]);
     return;
   }
-  // Future versions: switch on Number(version.value) and apply deltas here.
+  const v = Number(version.value);
+  if (v < 2) {
+    db.exec(V2_DDL);
+    db.run("UPDATE meta SET value = '2' WHERE key = 'schema_version'");
+  }
 }
 
 /** Apply the index.db baseline. The whole file is disposable (I13). */

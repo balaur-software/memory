@@ -24,7 +24,7 @@ import {
   transition,
   typeRow,
 } from "./spine.ts";
-import { MemoryError, type Node, type NodeId, type Props } from "./types.ts";
+import { MemoryError, type Node, type NodeId, normalizeText, type Props } from "./types.ts";
 
 // --- types (the host-facing contract) ---
 
@@ -83,10 +83,6 @@ export type Decision =
 
 // --- helpers ---
 
-function normalizeTitle(s: string): string {
-  return s.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
-}
-
 function requireGatedType(ctx: Ctx, type: string): void {
   const t = typeRow(ctx, type);
   if (t.born_status !== "proposed")
@@ -113,10 +109,10 @@ function findByNormalizedTitle(
     type,
     status,
   ]);
-  const wanted = normalizeTitle(title);
+  const wanted = normalizeText(title);
   for (const r of rows) {
     const node = mustGet(ctx, r.id as NodeId);
-    if (normalizeTitle(node.title) !== wanted) continue;
+    if (normalizeText(node.title) !== wanted) continue;
     if (visibility === "named" && node.surfacing === "never") continue;
     return node;
   }

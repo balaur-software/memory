@@ -103,6 +103,20 @@ export interface StoreContract {
   /** The honest erasure cascade (I6/I7). */
   forget(id: NodeId): ForgetReport;
 
+  // --- identity, phase A: names (docs/ENTITIES.md) ---
+
+  /** Record a name the node also answers to (owner verb; active nodes;
+   * idempotent; audited content-free — the alias text never enters the log). */
+  addAlias(id: NodeId, alias: string): void;
+  removeAlias(id: NodeId, alias: string): void;
+  /** All names the node answers to (normalized), alphabetical. */
+  aliasesOf(id: NodeId): string[];
+  /** Who is "Ana"? Exact-normalized candidates within one type — the owner
+   * picks, the library never does. I2: never invisible, ask resolves. */
+  resolveRef(type: string, text: string): Node[];
+  /** Walk merged_into chains to the living end; non-merged returns itself. */
+  survivorOf(id: NodeId): Node;
+
   // --- lineage & vectors & measurement ---
 
   /** Register a derived artifact's sources (artifact/source: node id or host ref). */

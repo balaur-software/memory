@@ -28,7 +28,7 @@ CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 ) STRICT;
--- rows: schema_version (integer as text, starts "1"), store_id (ulid),
+-- rows: schema_version (integer as text, currently "2"), store_id (ulid),
 --       created (timestamp)
 
 CREATE TABLE node_types (
@@ -103,6 +103,33 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_audit_at ON audit_log(at);
 ```
 
+### Version 2 — identity resolution (docs/ENTITIES.md)
+
+```sql
+-- Names a node also answers to. One alias may point at MANY nodes (two
+-- different Anas): lookups return candidates, never a winner.
+CREATE TABLE aliases (
+  alias   TEXT NOT NULL,   -- normalized (lowercase, collapsed whitespace)
+  node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  source  TEXT NOT NULL CHECK (source IN ('owner','merge')),
+  created TEXT NOT NULL,
+  PRIMARY KEY (alias, node_id)
+) STRICT;
+CREATE INDEX idx_aliases_node ON aliases(node_id);
+
+-- Open identity questions (Phase B writes these): unordered pair, a < b.
+CREATE TABLE identity_pending (
+  a        TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  b        TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  evidence TEXT NOT NULL CHECK (evidence IN ('title_match','token_subset','alias_match')),
+  created  TEXT NOT NULL,
+  PRIMARY KEY (a, b)
+) STRICT;
+```
+
+Aliases are content: they join the FTS `extra` column (an alias hit
+surfaces the node in recall) and the forget cascade deletes them (I6).
+
 ## index.db (disposable)
 
 ```sql
@@ -164,8 +191,10 @@ CREATE TABLE vectors (
   steps.
 - **I6 — Tombstone semantics.** `forget` sets `status='forgotten'`,
   `title=''`, `body=''`, `props='{}'`, `origin=''`, `author=''`; clears
-  `pending_edits`; deletes the node's edges; scrubs it from `nodes_fts` and
-  `vectors`; marks `derivations` rows with it as `source` stale. The row,
+  `pending_edits` and (v2) the node's `aliases`; deletes the node's edges;
+  scrubs it from `nodes_fts` and `vectors`; marks `derivations` rows with
+  it as `source` stale; lists merged husks chained into it as `husk:<id>`
+  in the report's `needsOwner` (computed before the edges drop). The row,
   `type`, and timestamps survive.
 - **I7 — Content-free forget audit.** Audit entries for forget-class actions
   carry ids and counts only. No audit row anywhere carries node title/body

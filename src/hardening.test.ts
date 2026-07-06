@@ -217,6 +217,9 @@ describe("audit stays content-free — structural (review I7/#15)", () => {
     store.setSurfacing(owner.id, "ask");
     const other = store.createNode({ type: "note", title: "plain", origin: "t" });
     store.link(owner.id, other.id, "links", `${S} context`);
+    store.addAlias(owner.id, `${S} alias`);
+    store.resolveRef("note", `${S} alias`);
+    store.removeAlias(owner.id, `${S} alias`);
     const p = store.propose({ type: "memory", title: `${S} proposal`, body: `${S} pbody`, origin: "turn:2" });
     store.conflictsFor(p.node.id);
     store.decide(p.node.id, { kind: "approve_edited", fields: { body: `${S} corrected` } });
