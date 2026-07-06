@@ -10,6 +10,7 @@
  */
 
 import type { Conflict, Decision, Outcome, Pending, Proposal } from "./consent.ts";
+import type { ForgetReport } from "./lifecycle.ts";
 import type { Edge, Node, NodeId, NodeTypeSpec, Props, Status, Surfacing } from "./types.ts";
 
 /** Tunables for the recall ranking blend; conformance pins the defaults. */
@@ -26,17 +27,6 @@ export interface RecallOptions {
   readonly queryVector?: Float32Array;
   /** Vector-space identity; required with queryVector. */
   readonly model?: string;
-}
-
-/** Honest account of a forget cascade (SCHEMA.md I6/I7). */
-export interface ForgetReport {
-  readonly tombstoned: NodeId;
-  readonly edgesDropped: number;
-  readonly indexScrubbed: boolean;
-  readonly flaggedStale: readonly string[]; // derived artifacts now stale
-  /** What the cascade cannot honestly resolve alone (host prose mentions,
-   * exports already written) — surfaced, never silently claimed. */
-  readonly needsOwner: readonly string[];
 }
 
 /** Metadata-only health snapshot — candidates, never actions. */

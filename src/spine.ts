@@ -421,7 +421,11 @@ export function transition(ctx: Ctx, id: NodeId, to: Status): Node {
     throw new MemoryError("invalid_transition", `cannot move ${id} from ${node.status} to ${to}`);
   }
   return ctx.mem.transaction(() => {
-    ctx.mem.run("UPDATE nodes SET status = ?, updated = ? WHERE id = ?", [to, ctx.now().toISOString(), id]);
+    // Leaving quarantine clears the re-review date; the state carries it, not the node.
+    ctx.mem.run(
+      "UPDATE nodes SET status = ?, review_at = CASE WHEN ? = 'quarantined' THEN review_at ELSE NULL END, updated = ? WHERE id = ?",
+      [to, to, ctx.now().toISOString(), id],
+    );
     audit(ctx, "owner", "node.transition", id, true, { from: node.status, to });
     const updated = mustGet(ctx, id);
     reindexNode(ctx, updated); // status gates index membership

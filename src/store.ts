@@ -11,6 +11,9 @@ import * as consent from "./consent.ts";
 import type { RecallOptions } from "./contract.ts";
 import { rebuildFts } from "./indexdb/fts.ts";
 import * as vectors from "./indexdb/vectors.ts";
+import type { ForgetReport } from "./lifecycle.ts";
+import * as lifecycle from "./lifecycle.ts";
+import * as lineage from "./lineage.ts";
 import * as recallMod from "./recall.ts";
 import * as spine from "./spine.ts";
 import type { OpenDb } from "./storage/adapter.ts";
@@ -160,6 +163,32 @@ export class Store {
 
   deleteVectors(model?: string): void {
     vectors.deleteVectors(this.guard().idx, model);
+  }
+
+  // --- lifecycle end-states (Phase 4 scope; SCHEMA.md I6, I8) ---
+
+  /** Suppress everywhere, ask-twice to view, optional re-review date.
+   * Reversible: transition(id, "active") lifts it. */
+  quarantine(id: NodeId, reviewAt?: string): void {
+    lifecycle.quarantine(this.guard(), id, reviewAt);
+  }
+
+  /** The honest erasure cascade (I6/I7): tombstone, drop edges, scrub the
+   * index, flag derivations stale — and report what it could NOT reach. */
+  forget(id: NodeId): ForgetReport {
+    return lifecycle.forget(this.guard(), id);
+  }
+
+  // --- lineage (landed with the cascade; SCHEMA.md derivations) ---
+
+  /** Register a derived artifact's sources at creation time. */
+  recordDerivation(artifact: string, sources: readonly string[]): void {
+    lineage.recordDerivation(this.guard(), artifact, sources);
+  }
+
+  /** Derived artifacts whose sources were forgotten or changed. */
+  staleDerivations(): string[] {
+    return lineage.staleDerivations(this.guard());
   }
 
   // --- index maintenance (I13) ---

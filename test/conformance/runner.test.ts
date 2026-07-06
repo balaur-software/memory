@@ -43,6 +43,8 @@ type Expect =
   | { recall: RecallSpec; titles?: string[]; titlesInOrder?: string[] }
   | { outcome: string; equals: string }
   | { conflicts: string; reasons: string[] }
+  | { report: string; path: string; equals?: unknown; length?: number; contains?: string }
+  | { sqlIndex: string; params?: unknown[]; equals: unknown }
   | { neighborhood: string; titlesEqual: string[] };
 
 const DIR = join(import.meta.dir);
@@ -65,6 +67,7 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
       let store = Store.open({ dir, now: () => new Date(++t) });
       const bindings = new Map<string, Node>();
       const outcomes = new Map<string, string>();
+      const reports = new Map<string, Record<string, unknown>>();
 
       try {
         for (const step of scenario.steps) {
@@ -132,6 +135,25 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
                   new Float32Array(step["vec"] as number[]),
                 );
                 return undefined;
+              case "quarantine":
+                store.quarantine(
+                  resolveRef(bindings, step["id"] as string) as Node["id"],
+                  step["reviewAt"] as string | undefined,
+                );
+                return undefined;
+              case "forget": {
+                const rep = store.forget(resolveRef(bindings, step["id"] as string) as Node["id"]);
+                if (step.as) reports.set(step.as, rep as unknown as Record<string, unknown>);
+                return undefined;
+              }
+              case "recordDerivation":
+                store.recordDerivation(
+                  step["artifact"] as string,
+                  (step["sources"] as string[]).map((s) =>
+                    s.startsWith("@") ? (resolveRef(bindings, s) as string) : s,
+                  ),
+                );
+                return undefined;
               case "rebuildIndex":
                 store.rebuildIndex();
                 return undefined;
@@ -172,6 +194,28 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
               expect(first).toEqual(ex.equals);
             } else if ("outcome" in ex) {
               expect(outcomes.get(ex.outcome)).toBe(ex.equals);
+            } else if ("report" in ex) {
+              const rep = reports.get(ex.report);
+              if (!rep) throw new Error(`unbound report ${ex.report}`);
+              const value = rep[ex.path];
+              if (ex.equals !== undefined) expect(value).toEqual(ex.equals);
+              if (ex.length !== undefined) expect((value as unknown[]).length).toBe(ex.length);
+              if (ex.contains !== undefined) expect(value as string[]).toContain(ex.contains);
+            } else if ("sqlIndex" in ex) {
+              const idxDb = new Database(join(dir, "index.db"), { readonly: true });
+              try {
+                const params = (ex.params ?? []).map((p) =>
+                  typeof p === "string" && p.startsWith("@") ? resolveRef(bindings, p) : p,
+                );
+                const row = idxDb.query(ex.sqlIndex).get(...(params as (string | number)[])) as Record<
+                  string,
+                  unknown
+                > | null;
+                const first = row === null ? null : Object.values(row)[0];
+                expect(first).toEqual(ex.equals);
+              } finally {
+                idxDb.close();
+              }
             } else if ("conflicts" in ex) {
               const node = bindings.get(ex.conflicts);
               if (!node) throw new Error(`unbound ${ex.conflicts}`);
