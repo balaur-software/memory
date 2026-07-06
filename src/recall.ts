@@ -21,7 +21,8 @@
 import type { RankingConfig, RecallOptions } from "./contract.ts";
 import { allVectors, cosine } from "./indexdb/vectors.ts";
 import type { Ctx } from "./spine.ts";
-import type { Node, NodeId, Props, Status, Surfacing } from "./types.ts";
+import type { Node, NodeId, Status, Surfacing } from "./types.ts";
+import { parseProps } from "./types.ts";
 
 /** Pinned defaults — conformance and the golden fixtures assume these. */
 export const DEFAULT_RANKING: RankingConfig = { lambda: 0.02, reinforcement: 0.2, rrfK: 60 };
@@ -94,7 +95,7 @@ function extract(text: string): string[] {
 function matchExpr(terms: readonly string[]): string {
   return terms
     .map((t) => t.trim())
-    .filter((t) => t !== "")
+    .filter((t) => t !== "" && !t.includes("\u0000"))
     .map((t) => `"${t.replaceAll('"', '""')}"`)
     .join(" OR ");
 }
@@ -113,9 +114,11 @@ export function lexicalCandidates(
   if (terms.length === 0) return [];
   const expr = matchExpr(terms);
   if (expr === "") return [];
+  // Ambient (untyped) recall excludes day-anchor plumbing (review #8); an
+  // explicit type filter — including type:"day" — reaches everything.
   const sql =
     kind === undefined
-      ? "SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?"
+      ? "SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ? AND kind != 'day' ORDER BY rank LIMIT ?"
       : "SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ? AND kind = ? ORDER BY rank LIMIT ?";
   const params = kind === undefined ? [expr, cap] : [expr, kind, cap];
   return ctx.idx.query<{ id: string; rel: number }>(sql, params).map((r) => ({ id: r.id, rel: r.rel }));
@@ -163,7 +166,7 @@ function loadEligible(ctx: Ctx, ids: readonly string[], terms: readonly string[]
       status: r.status as Status,
       surfacing: r.surfacing as Surfacing,
       importance: r.importance,
-      props: JSON.parse(r.props) as Props,
+      props: parseProps(r.props),
       origin: r.origin,
       author: r.author,
       useCount: r.use_count,
@@ -176,8 +179,9 @@ function loadEligible(ctx: Ctx, ids: readonly string[], terms: readonly string[]
   return out;
 }
 
-/** An `ask` node is surfaced only when a query term IS a word of its title. */
-function titleNamed(title: string, loweredTerms: readonly string[]): boolean {
+/** An `ask` node is surfaced only when a query term IS a word of its title.
+ * Exported: the consent surfaces apply the same I2 rule to hints. */
+export function titleNamed(title: string, loweredTerms: readonly string[]): boolean {
   const words = new Set(
     title
       .toLowerCase()

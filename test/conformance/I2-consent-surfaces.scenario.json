@@ -1,0 +1,48 @@
+{
+  "name": "I2 on the consent surfaces: never is invisible to the gate and to hints; named ask is fair game",
+  "invariants": ["I2", "I4"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    { "op": "registerType", "name": "memory", "bornStatus": "proposed" },
+    {
+      "op": "createNode",
+      "as": "secret",
+      "input": {
+        "type": "memory",
+        "title": "Private zkoval ledger",
+        "body": "SECRET numbers",
+        "origin": "owner"
+      }
+    },
+    { "op": "setSurfacing", "id": "@secret.id", "to": "never" },
+    {
+      "op": "propose",
+      "as": "probe",
+      "proposal": {
+        "type": "memory",
+        "title": "Private zkoval ledger",
+        "body": "title-guess probe",
+        "origin": "agent:t1"
+      }
+    },
+    {
+      "op": "createNode",
+      "as": "askNode",
+      "input": { "type": "memory", "title": "Zephyr budget quarterly", "origin": "owner" }
+    },
+    { "op": "setSurfacing", "id": "@askNode.id", "to": "ask" },
+    {
+      "op": "propose",
+      "as": "named",
+      "proposal": { "type": "memory", "title": "zephyr BUDGET quarterly", "body": "", "origin": "agent:t2" }
+    }
+  ],
+  "expect": [
+    { "outcome": "probe", "equals": "created" },
+    { "bound": "probe.body", "equals": "title-guess probe" },
+    { "conflicts": "probe", "reasons": [] },
+    { "outcome": "named", "equals": "exists_active" },
+    { "sql": "SELECT COUNT(*) FROM nodes WHERE type = 'memory' AND status = 'proposed'", "equals": 1 },
+    { "sql": "SELECT COUNT(*) FROM nodes WHERE type = 'memory' AND status = 'active'", "equals": 2 }
+  ]
+}

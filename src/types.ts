@@ -83,6 +83,22 @@ export interface AuditEntry {
   readonly meta: Readonly<Record<string, string | number | boolean>>;
 }
 
+/**
+ * The narrow validator all row-level JSON passes through (CODING.md): a
+ * malformed props cell degrades to an empty object instead of bricking
+ * every read that touches the row. Title/body stay readable; the doctor's
+ * duplicate scan and the host's own inspection find the damage.
+ */
+export function parseProps(raw: string): Props {
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (typeof v === "object" && v !== null && !Array.isArray(v)) return v as Props;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
 /** Typed failure for broken invariants and programmer error — domain forks
  * are return values, not exceptions (DESIGN.md "Errors and outcomes"). */
 export class MemoryError extends Error {

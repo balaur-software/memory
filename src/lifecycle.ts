@@ -25,8 +25,15 @@ export function quarantine(ctx: Ctx, id: NodeId, reviewAt?: string): void {
     throw new MemoryError("invalid_transition", `cannot quarantine ${id} from ${node.status}`);
   let review: string | null = null;
   if (reviewAt !== undefined) {
-    const ms = Date.parse(reviewAt);
-    if (Number.isNaN(ms)) throw new MemoryError("props_invalid", "reviewAt must be an ISO-8601 date");
+    // Strict ISO-8601 UTC only — lenient Date.parse silently timezone-shifts
+    // human-ish strings ("January 1, 2020" → the prior evening) (review #9).
+    if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z)?$/.test(reviewAt))
+      throw new MemoryError(
+        "props_invalid",
+        "reviewAt must be ISO-8601 UTC (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS[.mmm]Z)",
+      );
+    const ms = Date.parse(reviewAt.length === 10 ? `${reviewAt}T00:00:00.000Z` : reviewAt);
+    if (Number.isNaN(ms)) throw new MemoryError("props_invalid", "reviewAt is not a real date");
     review = new Date(ms).toISOString();
   }
   ctx.mem.run("UPDATE nodes SET status = 'quarantined', review_at = ?, updated = ? WHERE id = ?", [
