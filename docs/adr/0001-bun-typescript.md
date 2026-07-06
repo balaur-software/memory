@@ -5,8 +5,8 @@
 
 ## Context
 
-Phase 0 scaffolded this library in Go, assuming balaur (Go) would import it
-(the original "Phase 6"). The owner's working language is TypeScript; Bun
+Phase 0 scaffolded this library in Go, assuming a Go host application would
+import it directly. The owner's working language is TypeScript; Bun
 ships native, synchronous SQLite (`bun:sqlite`). In an agent-assisted
 workflow the owner's job is *reviewing* code — and you can only adjudicate
 what you read fluently. A consent-gated project whose owner cannot fluently
@@ -14,8 +14,8 @@ audit its own code contradicts its own philosophy.
 
 The costs of leaving Go are real and named, not waved away:
 
-1. **Balaur cannot import a TypeScript module.** The extraction becomes a
-   successor implementation.
+1. **Go code cannot import a TypeScript module.** The library becomes a
+   fresh implementation, not an extraction — no host inherits it for free.
 2. **Bun is a young, VC-funded runtime** (Oven). Runtimes die; this project
    plans in decades. (Kuzu — a VC-funded embedded database that shut down
    and archived in 2025 — is this repo's standing cautionary tale.)
@@ -27,8 +27,8 @@ costs:
 
 1. **The schema is the contract.** `docs/SCHEMA.md` (DDL + semantics +
    numbered invariants) is the durable API, versioned via `meta.schema_version`.
-   Any language — including balaur's Go — can open `memory.db`. The
-   TypeScript is the replaceable part, which is what code should be.
+   Any language, any decade, can open `memory.db`. The TypeScript is the
+   replaceable part, which is what code should be.
 2. **The runtime bet is contained in one file.** Only `src/storage/bun.ts`
    may import `bun:sqlite`, behind a ~dozen-method adapter interface. The
    exit ramp is documented: Node's `node:sqlite` is converging, and Bun
@@ -45,9 +45,9 @@ library is synchronous as a result.
 
 ## Consequences
 
-- **Phase 6 reframes**: balaur keeps its in-tree Go memory layer (plans
-  259–267 continue to improve it independently); interop, if ever wanted, is
-  balaur mounting the shared schema — read paths first. No import, no IPC.
+- **No host coupling**: the library stands alone. Interop with any other
+  process, if ever wanted, is that process mounting the schema — read paths
+  first. No import, no IPC.
 - Go scaffold files (`go.mod`, `*.go`) are deleted; their content lives on
   as the TS contract (`src/*.ts`), largely shape-for-shape.
 - Deployment story: `bun build --compile` for a standalone binary (~90 MB,

@@ -3,10 +3,10 @@
 > **A consent-gated, lineage-tracked, forgettable memory layer for personal AI.**
 > One SQLite file. One TypeScript library. No services, no models, no cloud.
 
-`balaur-memory` is the memory layer of a personal life OS, designed from
-[Balaur](https://github.com/alexradunet/balaur)'s memory layer and the
-research behind it. It is the layer *above* storage — the part no existing
-memory library ships:
+`balaur-memory` is the memory layer of a personal life OS — standalone,
+host-agnostic, born from dedicated research into how a life's knowledge
+should be stored, surfaced, and forgotten. It is the layer *above* storage —
+the part no existing memory library ships:
 
 - **Consent-gated writes** — an agent proposes; the owner decides. The
   proposal/adjudication queue is a data-layer contract, not prompt wording.
@@ -47,7 +47,7 @@ place for a life to land.
 
 ## Status
 
-**Feature-complete core (v0.1).** All five phases are implemented and
+**Feature-complete core.** All five phases are implemented and
 verified — the spine, recall (blend + vector fusion), the consent gate
 (AUDN routing, queue, four verdicts incl. supersede), lifecycle end-states
 (quarantine, the honest forget cascade), lineage, and the metadata-only
@@ -57,9 +57,9 @@ construction) — every invariant with a possible producer has one. The
 entity arc (ENTITIES.md) is complete, all four phases: aliases,
 resolution, deterministic identity questions, owner-decided merges with
 no_match permanence, and the bounded `entityContext` peer card for host
-prompts. Balaur remains the design source
-and keeps its own in-tree Go memory layer; the projects share lineage and
-(optionally, later) a schema — not code.
+prompts. The library is fully standalone — no parent application, no host
+commitments: any host, present or future, builds on the schema contract
+and the TypeScript API.
 
 ## Docs
 
@@ -69,10 +69,10 @@ and keeps its own in-tree Go memory layer; the projects share lineage and
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture: sync-first, vectors-in, ranking blend, module map |
 | [docs/CODING.md](docs/CODING.md) | The rules: strict TS, zero deps, SQL discipline, tests |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Scenario-file suite any implementation can run |
-| [docs/MIGRATION.md](docs/MIGRATION.md) | Phase map and status |
+| [docs/HISTORY.md](docs/HISTORY.md) | How the library was built — the phase log |
 | [docs/adr/](docs/adr/) | Decision records (0001: Bun + TypeScript) |
 
 ## License
 
-AGPL-3.0-or-later, matching the parent project — with the library-adoption
-tradeoff documented in [docs/DESIGN.md](docs/DESIGN.md#license).
+AGPL-3.0-or-later — with the library-adoption tradeoff documented in
+[docs/DESIGN.md](docs/DESIGN.md#license).

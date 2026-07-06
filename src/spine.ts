@@ -465,8 +465,8 @@ export function setSurfacing(ctx: Ctx, id: NodeId, s: Surfacing): void {
 }
 
 /** Record that recalled knowledge was actually used. Deliberately does NOT
- * bump `updated` — usage is not a content change (divergence from balaur,
- * documented): the "(as of …)" freshness signal stays honest. */
+ * bump `updated` — usage is not a content change: the "(as of …)"
+ * freshness signal stays honest. */
 export function touch(ctx: Ctx, id: NodeId): void {
   const node = mustGet(ctx, id);
   if (node.status !== "active")

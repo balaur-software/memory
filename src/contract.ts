@@ -1,8 +1,7 @@
 /**
- * The DRAFT Store contract — the reviewable shape of the library. Phase 1
- * (docs/MIGRATION.md) replaces this interface with the concrete Store class
- * over memory.db + index.db; it exists now so the surface can be criticized
- * before it is load-bearing. Changes are free until Phase 1 ships.
+ * The Store contract — the reviewable shape of the library, held by the
+ * compiler: `class Store implements StoreContract` (store.ts), so this
+ * surface and the shipped one can never drift.
  *
  * Everything is SYNCHRONOUS (DESIGN.md): bun:sqlite is sync, personal scale
  * is sub-millisecond, and the one truly async concern — embedding text —

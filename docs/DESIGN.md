@@ -76,9 +76,10 @@ one file plus the conformance run.
 ### Concurrency & ownership
 
 One `Store` instance is the single writer (I14); `memory.db` runs WAL so
-external processes may read concurrently (a Go balaur mounting the file
-read-only is the designed-for case). The library does not lock across
-processes — hosts that want multi-process writers are out of scope by design.
+external processes may read concurrently (any external tool mounting the
+file read-only — an analytics notebook, a reporting script, a second app —
+is the designed-for case). The library does not lock across processes —
+hosts that want multi-process writers are out of scope by design.
 
 ### Errors and outcomes
 
@@ -135,7 +136,7 @@ new database.
 
 ## License
 
-AGPL-3.0-or-later, matching the parent project, while the sole author
+AGPL-3.0-or-later, while the sole author
 retains trivial relicensing freedom. Decide deliberately before accepting
 external contributions (library copyleft reaches consumers; Apache-2.0 is
 the conventional adoption-maximizing switch and must happen while the

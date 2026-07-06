@@ -71,5 +71,5 @@ owner. Add a rule only when it changes a real decision.
 - Conventional commits (`feat` / `fix` / `docs` / `refactor` / `test`).
 - Never commit or push unless the owner explicitly asks; gate every push on
   `bun run check`.
-- `docs/MIGRATION.md`'s status table is canonical — update it in the same
+- `docs/HISTORY.md`'s phase log is canonical — update it in the same
   change that lands a phase.

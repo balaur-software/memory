@@ -219,13 +219,13 @@ CREATE TABLE vectors (
   `rebuildIndex()` reconstructs it from `memory.db` exactly (FTS rows for
   active nodes only; vectors are re-suppliable by the host).
 - **I14 — Single writer.** One `Store` instance owns writes to a given
-  `memory.db`. WAL mode permits concurrent external readers (e.g., a future
-  balaur mounting the file read-only).
+  `memory.db`. WAL mode permits concurrent external readers (e.g., any
+  external tool mounting the file read-only).
 
-## Divergences from balaur (deliberate)
+## Deliberate schema choices
 
-- ULIDs, not 15-char PocketBase-style ids; strict ISO timestamps, not
-  `2006-01-02 15:04:05.000Z`.
+- Lowercase ULIDs for every id; strict ISO-8601 UTC timestamps with
+  milliseconds, everywhere.
 - `importance`, `surfacing`, provenance are real columns, not `props` keys —
   they carry invariants; JSON is for host-defined data only.
 - Pending edits are a table, not a `props` envelope — the queue is queryable.
