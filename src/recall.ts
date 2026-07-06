@@ -250,8 +250,12 @@ export function recall(ctx: Ctx, terms: readonly string[], opts: RecallOptions =
   const vecRanked = vecIds.filter((id) => vecNodes.has(id));
 
   const rrf = new Map<string, number>();
-  lexRanked.forEach((c, i) => rrf.set(c.id, (rrf.get(c.id) ?? 0) + 1 / (cfg.rrfK + i + 1)));
-  vecRanked.forEach((id, i) => rrf.set(id, (rrf.get(id) ?? 0) + 1 / (cfg.rrfK + i + 1)));
+  lexRanked.forEach((c, i) => {
+    rrf.set(c.id, (rrf.get(c.id) ?? 0) + 1 / (cfg.rrfK + i + 1));
+  });
+  vecRanked.forEach((id, i) => {
+    rrf.set(id, (rrf.get(id) ?? 0) + 1 / (cfg.rrfK + i + 1));
+  });
 
   const byId = new Map<string, Node>([...nodes, ...vecNodes]);
   return [...rrf.entries()]

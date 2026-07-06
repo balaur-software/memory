@@ -1,8 +1,11 @@
 # INTEGRATIONS.md — reaching the library from outside (design sketch)
 
-- **Status:** SKETCH — design only. The surfaces below are satellite work
-  (their own packages or the host repo), not library code; nothing here
-  changes the core.
+- **Status:** DEFERRED — not in active scope. The two supported surfaces
+  for now are the in-process library (`bun add balaur-memory`,
+  `import { Store }`) and the `balaur` CLI shipped in the same package
+  (run via `bunx balaur` or as a `bun build --compile` standalone binary
+  — see [CLI.md](CLI.md)). The sketch below is preserved as the design
+  for when satellite work resumes; nothing here is built or tracked.
 - **The doctrine, stated once:** the library is **Bun-only by design**
   (ratified). `bun add balaur-memory` and `import { Store }` is the whole
   in-process story — the package ships raw TypeScript (Bun consumes it

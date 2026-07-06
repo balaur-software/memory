@@ -43,8 +43,26 @@ const store = Store.open({ dir: `${process.env.HOME}/.local/share/life` });
 The package ships raw TypeScript — Bun consumes it natively; there is no
 build step and no Node entry, **deliberately** (ADR-0001: the runtime bet
 is contained in one adapter file; the schema is the durable contract).
-Other runtimes and agent harnesses reach the library through a process
-boundary — see [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+
+### The `balaur` CLI (the second supported surface)
+
+The same package ships a `bin` entry — a thin host over `Store` — and a
+`bun build --compile` standalone binary for machines without Bun
+installed (ADR-0001's deployment story):
+
+```bash
+bunx balaur --help                              # via bunx, after bun add
+bunx balaur doctor                              # human-readable by default
+bunx balaur recall "lake house" --json          # pipe-friendly
+
+bun run build                                   # → dist/balaur (standalone)
+./dist/balaur --dir ~/.local/share/life pending
+```
+
+The CLI maps 1:1 to the `Store` surface; see [docs/CLI.md](docs/CLI.md)
+for the full command reference. Process-boundary integration surfaces
+(MCP server, pi.dev extension, Agent Skills) are deferred — see
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## The two contracts
 
@@ -94,7 +112,8 @@ the schema contract and the TypeScript API.
 | [docs/CODING.md](docs/CODING.md) | The rules: strict TS, zero deps, SQL discipline, tests |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Scenario-file suite any implementation can run |
 | [docs/HOSTING.md](docs/HOSTING.md) | Building a life on this library — the host patterns, probe-validated |
-| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Reaching the library from outside: MCP, pi.dev, skills (sketch) |
+| [docs/CLI.md](docs/CLI.md) | The `balaur` CLI — `bunx balaur` and the `bun build --compile` standalone binary |
+| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Reaching the library from outside (DEFERRED): MCP, pi.dev, skills sketch |
 | [docs/FIELD.md](docs/FIELD.md) | The 2026 landscape survey: where this library stands, the steal ledger |
 | [docs/HISTORY.md](docs/HISTORY.md) | How the library was built — the phase log |
 | [docs/adr/](docs/adr/) | Decision records (0001: Bun + TypeScript) |

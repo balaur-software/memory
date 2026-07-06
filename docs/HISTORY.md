@@ -39,6 +39,7 @@ ratification.
 | ergonomics — the life-layer batch | propsPatch, episode window, children dashboard read, the owner fast path on gated types | DONE (PR #24, merged; #23 superseded) |
 | hosting guide (HOSTING.md) | the ten probe-validated life patterns, capture vocabulary, the daily tick, backup procedure | DONE (PR #25, merged) |
 | publishability — Bun-only | exports map to raw TS (no build, by design), files allowlist, engines pin; INTEGRATIONS.md sketch (MCP + pi.dev + skills over process boundaries) | in review (PR #26) |
+| scope — Bun-only + CLI standalone | two supported surfaces for now: the in-process library (primary) and the `balaur` CLI (`bunx balaur` + `bun build --compile` standalone). INTEGRATIONS.md satellite work (MCP / pi.dev / skills) deferred to a sketch. ADR-0001 containment holds for the CLI too. | in progress |
 
 13 of 14 invariants are conformance-pinned (I14, single writer, holds by
 construction). `Store implements StoreContract` is compiler-checked.
@@ -54,6 +55,12 @@ construction). `Store implements StoreContract` is compiler-checked.
   inside the library.
 
 ## What's next
+
+The active scope is two Bun surfaces: the in-process library (primary) and
+the `balaur` CLI / standalone binary — see [CLI.md](CLI.md). The
+process-boundary integration surfaces (MCP server, pi.dev extension,
+Agent Skills package) are deferred to the [INTEGRATIONS.md](INTEGRATIONS.md)
+sketch, to be resumed when satellite work is back on the roadmap.
 
 A host application, built from scratch on this library — and nothing here
 depends on it existing. The schema contract (SCHEMA.md) is what keeps
