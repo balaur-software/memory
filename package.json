@@ -36,7 +36,7 @@
     "knowledge-graph",
     "life-os"
   ],
-  "repository": "github:alexradunet/balaur-memory",
+  "repository": "github:balaur-software/memory",
   "scripts": {
     "check": "bunx tsc --noEmit && bunx biome check . && bun test",
     "test": "bun test",

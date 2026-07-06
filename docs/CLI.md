@@ -12,7 +12,7 @@ and the clock; it calls the library and nothing else. It never imports
 `bin` entry, so the CLI is available alongside the import:
 
 ```bash
-bun add github:alexradunet/balaur-memory
+bun add github:balaur-software/memory
 bunx balaur --help
 bunx balaur doctor
 ```

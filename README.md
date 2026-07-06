@@ -32,7 +32,7 @@ the part no existing memory library ships:
 ## Using it (Bun — by design)
 
 ```bash
-bun add github:alexradunet/balaur-memory
+bun add github:balaur-software/memory#v0.4.3   # pin to a release tag
 ```
 
 ```ts
@@ -43,6 +43,9 @@ const store = Store.open({ dir: `${process.env.HOME}/.local/share/life` });
 The package ships raw TypeScript — Bun consumes it natively; there is no
 build step and no Node entry, **deliberately** (ADR-0001: the runtime bet
 is contained in one adapter file; the schema is the durable contract).
+Releases are Git tags, not registry publishes — see
+[docs/RELEASE.md](docs/RELEASE.md) for the runbook and the parallel-dev
+`bun link` flow.
 
 ### The `balaur` CLI (the second supported surface)
 
@@ -113,6 +116,7 @@ the schema contract and the TypeScript API.
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Scenario-file suite any implementation can run |
 | [docs/HOSTING.md](docs/HOSTING.md) | Building a life on this library — the host patterns, probe-validated |
 | [docs/CLI.md](docs/CLI.md) | The `balaur` CLI — `bunx balaur` and the `bun build --compile` standalone binary |
+| [docs/RELEASE.md](docs/RELEASE.md) | Cutting a release (Git tags, not npm) + `bun link` for parallel dev |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Reaching the library from outside (DEFERRED): MCP, pi.dev, skills sketch |
 | [docs/FIELD.md](docs/FIELD.md) | The 2026 landscape survey: where this library stands, the steal ledger |
 | [docs/HISTORY.md](docs/HISTORY.md) | How the library was built — the phase log |

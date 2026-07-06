@@ -38,8 +38,9 @@ ratification.
 | hardening 3 — the perpetuity batch | forget clears when_at (I6), closed-triple loud refusal, the future-file guard, day reserved, backup() via VACUUM INTO, doctor integrityOk | DONE (PR #22, merged) |
 | ergonomics — the life-layer batch | propsPatch, episode window, children dashboard read, the owner fast path on gated types | DONE (PR #24, merged; #23 superseded) |
 | hosting guide (HOSTING.md) | the ten probe-validated life patterns, capture vocabulary, the daily tick, backup procedure | DONE (PR #25, merged) |
-| publishability — Bun-only | exports map to raw TS (no build, by design), files allowlist, engines pin; INTEGRATIONS.md sketch (MCP + pi.dev + skills over process boundaries) | in review (PR #26) |
-| scope — Bun-only + CLI standalone | two supported surfaces for now: the in-process library (primary) and the `balaur` CLI (`bunx balaur` + `bun build --compile` standalone). INTEGRATIONS.md satellite work (MCP / pi.dev / skills) deferred to a sketch. ADR-0001 containment holds for the CLI too. | in progress |
+| publishability — Bun-only | exports map to raw TS (no build, by design), files allowlist, engines pin; INTEGRATIONS.md sketch (MCP + pi.dev + skills over process boundaries) | DONE (PR #26, merged) |
+| scope — Bun-only + CLI standalone | two supported surfaces for now: the in-process library (primary) and the `balaur` CLI (`bunx balaur` + `bun build --compile` standalone). INTEGRATIONS.md satellite work (MCP / pi.dev / skills) deferred to a sketch. ADR-0001 containment holds for the CLI too. | DONE (tagged v0.4.3) |
+| relocate — balaur-software org | origin moved to `github:balaur-software/memory`; RELEASE.md runbook (Git-tag releases + `bun link` parallel dev); all internal URLs repointed | DONE (this change) |
 
 13 of 14 invariants are conformance-pinned (I14, single writer, holds by
 construction). `Store implements StoreContract` is compiler-checked.
