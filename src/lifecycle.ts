@@ -116,6 +116,15 @@ export function forget(ctx: Ctx, id: NodeId): ForgetReport {
     });
   });
 
+  // The record's WAL still holds pre-forget page images; truncate it so
+  // destroyed content does not outlive the verb in a sidecar file. Runs
+  // outside the transaction (checkpointing inside one is a no-op).
+  try {
+    ctx.mem.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch {
+    audit(ctx, "system", "forget.checkpoint", id, false);
+  }
+
   let indexScrubbed = true;
   try {
     deleteFts(ctx.idx, id);

@@ -230,7 +230,16 @@ nodes.
   deletes the node's edges; scrubs it from `nodes_fts` and `vectors`;
   marks `derivations` rows with it as `source` stale; lists merged husks
   chained into it as `husk:<id>` in the report's `needsOwner` (computed
-  before the edges drop). The row, `type`, and timestamps survive.
+  before the edges drop). The row, `type`, and timestamps survive. The
+  reference implementation sets `PRAGMA secure_delete=ON` on both
+  `memory.db` and `index.db` and configures the FTS5 `secure-delete`
+  shadow-table option, and truncates the WAL (`wal_checkpoint(TRUNCATE)`)
+  after every forget, so destroyed content is overwritten in the store's
+  own files rather than merely unlinked. Out of contract and NOT addressed
+  by any of this: filesystem- or SSD-level remanence (wear leveling,
+  journaling filesystems, OS-level snapshots) and any copy that already
+  left the store — that is exactly what `needsOwner`'s
+  `external:prior-exports` names.
 - **I7 — Content-free forget audit.** Audit entries for forget-class actions
   carry ids and counts only. No audit row anywhere carries node title/body
   text.
@@ -309,6 +318,13 @@ nodes.
   directory 0700 and keeps `memory.db`, `index.db`, their WAL/SHM siblings,
   and every `backup()` output at 0600 (POSIX permissions; a no-op on
   Windows, where ACLs govern instead).
+- **Backups outlive forgetting.** `backup(toPath)` produces a compacted,
+  clean copy of whatever the record held at that moment (see I6 above) —
+  it is not, and cannot be, aware of a `forget()` that happens later. A
+  backup taken before a forget still holds the forgotten content; that
+  copy left the store's honesty contract the moment it was written, and
+  managing it (rotating it out, re-running backups after a forget) is the
+  owner's responsibility, same as any other `external:prior-exports`.
 
 ## Deliberate schema choices
 

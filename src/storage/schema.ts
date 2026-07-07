@@ -13,6 +13,7 @@ export const SCHEMA_VERSION = 4;
 const MEMORY_DDL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+PRAGMA secure_delete = ON;
 
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -201,5 +202,11 @@ export function migrateMemoryDb(db: SqlDb, now: () => Date): void {
 
 /** Apply the index.db baseline. The whole file is disposable (I13). */
 export function migrateIndexDb(db: SqlDb): void {
+  db.exec("PRAGMA secure_delete = ON;");
   db.exec(INDEX_DDL);
+  // FTS5's own DELETE leaves tokens in old segments until a merge; this
+  // command-insert form (idempotent, safe on every open) configures the
+  // shadow tables to overwrite deleted entries instead of just unlinking
+  // them (SQLite >= 3.42).
+  db.exec("INSERT INTO nodes_fts(nodes_fts, rank) VALUES('secure-delete', 1);");
 }

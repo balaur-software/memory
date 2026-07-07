@@ -6,7 +6,7 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "./store.ts";
@@ -310,5 +310,29 @@ describe("store files are private by default (plan 003)", () => {
     } finally {
       rmSync(backupDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("forget() is honest at the byte level (plan 004)", () => {
+  test("forgotten content does not survive in the store's bytes", () => {
+    const title = "CANARY-TITLE-9f3a7";
+    const body = "CANARY-BODY-2c8e1";
+    const alias = "CANARY-ALIAS-71bd0";
+    const n = store.createNode({ type: "note", title, body, origin: "t" });
+    store.addAlias(n.id, alias);
+    store.updateNode(n.id, { body: "CANARY-BODY-2c8e1 revised" }); // produces a memory_history row
+    store.forget(n.id);
+    store.close();
+
+    for (const f of ["memory.db", "memory.db-wal", "memory.db-shm", "index.db", "index.db-wal"]) {
+      const p = join(dir, f);
+      if (!existsSync(p)) continue;
+      const raw = readFileSync(p).toString("latin1");
+      expect(raw.includes(title)).toBe(false);
+      expect(raw.includes(body)).toBe(false);
+      expect(raw.includes(alias)).toBe(false);
+    }
+
+    store = Store.open({ dir, now }); // afterEach symmetry
   });
 });
