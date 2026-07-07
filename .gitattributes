@@ -1,0 +1,24 @@
+# What a git-tag install ships is governed HERE (git archive), not by
+# package.json "files" (npm-pack only). Keep the two lists in sync.
+.github         export-ignore
+.githooks       export-ignore
+.editorconfig   export-ignore
+.gitattributes  export-ignore
+.gitignore      export-ignore
+AGENTS.md       export-ignore
+biome.json      export-ignore
+bun.lock        export-ignore
+plans           export-ignore
+test            export-ignore
+src/**/*.test.ts export-ignore
+docs/DESIGN.md      export-ignore
+docs/CODING.md      export-ignore
+docs/CONFORMANCE.md export-ignore
+docs/TEMPORAL.md    export-ignore
+docs/PLANNING.md    export-ignore
+docs/ENTITIES.md    export-ignore
+docs/HISTORY.md     export-ignore
+docs/RELEASE.md     export-ignore
+docs/INTEGRATIONS.md export-ignore
+docs/FIELD.md       export-ignore
+docs/adr            export-ignore

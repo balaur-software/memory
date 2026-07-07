@@ -8,10 +8,13 @@ bun add github:balaur-software/memory#v0.4.3
 ```
 
 Bun clones the repo at that ref and uses the raw TypeScript directly
-(ADR-0001: no build step, no `dist`). The `files` allowlist in
-`package.json` is what gets shipped — `src`, the two contract docs.
-Bumping the install in a consumer is `bun update balaur-memory` or
-re-adding with a new tag.
+(ADR-0001: no build step, no `dist`). GitHub serves that install as a
+`git archive` of the tag, so what's shipped is governed by
+`.gitattributes` `export-ignore` — **not** by the `files` allowlist in
+`package.json` (that field only applies to npm-pack/registry tarballs,
+which this project never produces). See
+[What ships in a tag](#what-ships-in-a-tag). Bumping the install in a
+consumer is `bun update balaur-memory` or re-adding with a new tag.
 
 For parallel development against a local checkout, see
 [Linking for parallel dev](#linking-for-parallel-dev) below.
@@ -44,6 +47,16 @@ For parallel development against a local checkout, see
    ```bash
    bun add github:balaur-software/memory#v0.4.4
    ```
+7. **Verify the consumer view.** `bun add` alone can't prove what a
+   git-archive tarball contains (a linked/cloned resolution can hide
+   export-ignore gaps) — inspect the installed tree directly:
+   ```bash
+   mkdir /tmp/verify-release && cd /tmp/verify-release
+   bun init -y && bun add github:balaur-software/memory#v0.4.4
+   find node_modules/balaur-memory -type f | sort
+   ```
+   Confirm no `test/`, no `*.test.ts`, no `AGENTS.md`, no `plans/`, and
+   no docs beyond `docs/SCHEMA.md` / `docs/HOSTING.md` are present.
 
 The tag is the release. There is no separate publish step, no registry
 login, no stale `dist` to rebuild. A tag that doesn't match
@@ -52,16 +65,51 @@ never by moving the tag.
 
 ## What ships in a tag
 
-The `files` field in `package.json` controls it:
+Releases are git tags, consumed via `bun add github:…#<tag>`. GitHub
+serves that as a `git archive`-style tarball of the tag, which honors
+`.gitattributes` `export-ignore` — **that file is the actual shipping
+allowlist**, not `package.json#files`. `package.json#files` only takes
+effect if this package is ever published to the npm registry
+(`npm pack`/`npm publish`); today it does nothing, but it's kept present
+and in sync by hand in case that changes.
 
-- `src/` — the library (tests excluded via `!src/**/*.test.ts`)
-- `docs/SCHEMA.md`, `docs/HOSTING.md` — the contracts a
-  host needs at install time
+`.gitattributes` `export-ignore` marks as excluded:
 
-Everything else (`README.md`, `LICENSE`, `AGENTS.md`, the rest of `docs/`,
-`test/`, `support.js`, the `.dc.html` scratchpad) is in the repo but not
-in the install. `AGENTS.md` is deliberately **not** shipped — it's a
-contributor rule set, not a consumer contract.
+- `test/`, `src/**/*.test.ts` — no test code or fixtures
+- `plans/`, `AGENTS.md`, `docs/*` (all but `SCHEMA.md`/`HOSTING.md`),
+  `docs/adr/` — contributor-facing docs and planning artifacts
+- `.github/`, `.githooks/`, `.editorconfig`, `biome.json`, `bun.lock`,
+  `.gitattributes`, `.gitignore` — repo/CI tooling, not consumer needs
+
+What ships: `src/` (library code, tests excluded), `docs/SCHEMA.md`,
+`docs/HOSTING.md` (the contracts a host needs at install time),
+`package.json`, `README.md`, `LICENSE`, `tsconfig.json`. `AGENTS.md` is
+deliberately **not** shipped — it's a contributor rule set, not a
+consumer contract.
+
+Keep `.gitattributes` and `package.json#files` in sync by hand — there is
+no automated check that they agree.
+
+### Backfilled tags
+
+The runbook above ("the tag is the release") wasn't followed from the
+start. Versions `v0.3.0`, `v0.3.1`, `v0.4.1`, `v0.4.2` shipped (per commit
+messages / `docs/HISTORY.md`) without a corresponding git tag, leaving
+them unpinnable. Backfilled 2026-07-07, tagging the commit whose own
+`package.json#version` matches:
+
+| Tag      | Commit    |
+|----------|-----------|
+| `v0.3.0` | `441a55b` |
+| `v0.3.1` | `469749a` |
+| `v0.4.1` | `35d75e1` |
+| `v0.4.2` | `d454edd` |
+
+Each backfilled tag's annotation notes it was added after the fact.
+Pre-runbook versions `v0.1.x`–`v0.2.2` are deliberately left untagged —
+they predate the "tag is the release" convention and no reliable
+`package.json#version`-to-commit mapping was established for them at the
+time.
 
 ## Schema-version coordination
 

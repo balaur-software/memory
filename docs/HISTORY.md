@@ -24,7 +24,7 @@ ratification.
 | hardening — cold-review fix batch | consent-surface privacy seals, corrupt-index recovery, the guard set, parseProps, the audit-leak sentinel | DONE (PR #8) |
 | entities — design doc | ENTITIES.md: consent-gated identity resolution | DONE (PR #9) |
 | entities A — names | schema v2 (aliases + identity_pending), addAlias/removeAlias/aliasesOf, resolveRef, survivorOf, alias FTS indexing + forget amendments | DONE (PR #10) |
-| entities B — questions | deterministic rules R1–R3, suggestIdentities, the Pending tagged union (v0.2.0) | DONE (PR #11) |
+| entities B — questions | deterministic rules R1–R3, suggestIdentities, the Pending tagged union (pre-tag era)[^1] | DONE (PR #11) |
 | entities C — verdicts | decideIdentity: the compound merge + no_match permanence (I9, both halves), merged joins the forgettable set (I8) | DONE (PR #12) |
 | entities D — the peer card | entityContext: the bounded, edge-carrying disambiguation primitive | DONE (PR #13) |
 | standalone | every parent-app reference removed; MIGRATION.md → HISTORY.md | DONE (PR #14) |
@@ -42,6 +42,13 @@ ratification.
 | scope — Bun-only + CLI standalone | two supported surfaces for now: the in-process library (primary) and the `balaur` CLI (`bunx balaur` + `bun build --compile` standalone). INTEGRATIONS.md satellite work (MCP / pi.dev / skills) deferred to a sketch. ADR-0001 containment holds for the CLI too. | DONE (tagged v0.4.3) |
 | relocate — balaur-software org | origin moved to `github:balaur-software/memory`; RELEASE.md runbook (Git-tag releases + `bun link` parallel dev); all internal URLs repointed | DONE (this change) |
 | drop the CLI | `cli/` (index/args/commands/render, ~1,200L) + `docs/CLI.md` removed; `bin`/`build`/`build:cross` dropped from `package.json` — the in-process library is now the only supported surface, per an explicit owner decision (2026-07-07): no CLI, no integrations beyond the direct Bun library | DONE (this change) |
+
+[^1]: The entities-B commit message bracketed `[v0.2.0]`, but
+`package.json#version` at that commit (`5eec736`) was still `0.1.0` — it
+wasn't bumped again until `0.2.2` (entities D). `v0.2.0`/`v0.2.1` never
+existed as an actual `package.json` version or a git tag; "pre-tag era"
+is used here instead of a specific number (see `docs/RELEASE.md`
+"Backfilled tags").
 
 13 of 14 invariants are conformance-pinned (I14, single writer, holds by
 construction). `Store implements StoreContract` is compiler-checked.
