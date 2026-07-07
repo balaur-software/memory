@@ -5,7 +5,7 @@
  * surface can no longer drift.
  */
 
-import { existsSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Conflict, Decision, EditChange, Outcome, Pending, Proposal } from "./consent.ts";
 import * as consent from "./consent.ts";
@@ -50,6 +50,7 @@ export class Store implements StoreContract {
   }
 
   static open(opts: StoreOptions): Store {
+    mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
     const now = opts.now ?? (() => new Date());
     const openDb = opts.openDb ?? openBunDb;
     const mem = openDb(join(opts.dir, "memory.db"));
@@ -69,6 +70,15 @@ export class Store implements StoreContract {
       idx = openDb(idxPath);
       migrateIndexDb(idx);
       recovered = true;
+    }
+    // A life's record is private by default: 0600 on every store file the
+    // process owns. -wal/-shm inherit the main file's mode when SQLite
+    // creates them; chmod existing ones for stores created before this rule.
+    for (const f of ["memory.db", "index.db"]) {
+      for (const suffix of ["", "-wal", "-shm"]) {
+        const p = join(opts.dir, f + suffix);
+        if (existsSync(p)) chmodSync(p, 0o600);
+      }
     }
     const store = new Store({ mem, idx, now });
     if (recovered) {
@@ -318,6 +328,7 @@ export class Store implements StoreContract {
     if (existsSync(toPath))
       throw new MemoryError("conflict", "backup target already exists — backups never overwrite");
     ctx.mem.run("VACUUM INTO ?", [toPath]);
+    chmodSync(toPath, 0o600); // backups carry the same privacy as the record
     spine.audit(ctx, "owner", "store.backup", "", true, {});
   }
 }

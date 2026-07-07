@@ -234,6 +234,10 @@ store.backup(`${backupDir}/memory-${stamp}.db`);   // VACUUM INTO: WAL-safe, com
   `doctor().integrityOk` — an untested backup is a hope, not a backup.
 - Keep generations (daily/weekly/monthly) on separate media; the file is
   small (personal scale) and `VACUUM INTO` output compresses well.
+- Backups are private by default: `backup()` chmods its output to 0600
+  (POSIX; a no-op on Windows), matching the store directory (0700) and
+  `memory.db`/`index.db` themselves — check your backup media's own
+  permissions too.
 
 ## 11 · Net worth (point-in-time holdings)
 

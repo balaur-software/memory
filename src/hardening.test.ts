@@ -6,7 +6,7 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "./store.ts";
@@ -262,5 +262,53 @@ describe("audit stays content-free — structural (review I7/#15)", () => {
     db.close();
     expect(hits.c).toBe(0);
     store = Store.open({ dir, now }); // afterEach symmetry
+  });
+});
+
+describe("store files are private by default (plan 003)", () => {
+  test("Store.open creates a missing directory with mode 0700", () => {
+    const root = mkdtempSync(join(tmpdir(), "bm-hardening-root-"));
+    const nested = join(root, "does/not/exist/yet");
+    let s: Store | undefined;
+    try {
+      expect(() => {
+        s = Store.open({ dir: nested, now });
+      }).not.toThrow();
+      expect(statSync(nested).mode & 0o777).toBe(0o700);
+      const opened = s as Store;
+      opened.registerType({ name: "note", bornStatus: "active" });
+      const n = opened.createNode({ type: "note", title: "round trip", origin: "t" });
+      expect(opened.getNode(n.id).title).toBe("round trip"); // createNode + getNode round-trip
+    } finally {
+      s?.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("memory.db, index.db, and their existing WAL/SHM siblings are mode 0600", () => {
+    store.createNode({ type: "note", title: "force wal", origin: "t" }); // forces WAL/SHM creation
+    let checked = 0;
+    for (const f of ["memory.db", "index.db"]) {
+      for (const suffix of ["", "-wal", "-shm"]) {
+        const p = join(dir, f + suffix);
+        if (existsSync(p)) {
+          expect(statSync(p).mode & 0o777).toBe(0o600);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(2); // at least memory.db and index.db were checked
+  });
+
+  test("backup() output is mode 0600", () => {
+    store.createNode({ type: "note", title: "backed up", origin: "t" });
+    const backupDir = mkdtempSync(join(tmpdir(), "bm-hardening-backup-"));
+    const target = join(backupDir, "snap.db");
+    try {
+      store.backup(target);
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(backupDir, { recursive: true, force: true });
+    }
   });
 });

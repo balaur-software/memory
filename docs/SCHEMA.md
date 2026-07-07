@@ -305,6 +305,10 @@ nodes.
   `schema_version` exceeds what the build knows throws on open — upgrade
   the library, never downgrade the file. (Older files upgrade in place,
   in order, as always.)
+- **Private by default**: the reference implementation creates the store
+  directory 0700 and keeps `memory.db`, `index.db`, their WAL/SHM siblings,
+  and every `backup()` output at 0600 (POSIX permissions; a no-op on
+  Windows, where ACLs govern instead).
 
 ## Deliberate schema choices
 
