@@ -695,6 +695,8 @@ export function transition(ctx: Ctx, id: NodeId, to: Status): Node {
 }
 
 export function setSurfacing(ctx: Ctx, id: NodeId, s: Surfacing): void {
+  if (s !== "always" && s !== "ask" && s !== "never")
+    throw new MemoryError("props_invalid", `surfacing must be always|ask|never, got ${JSON.stringify(s)}`);
   const node = mustGet(ctx, id);
   ctx.mem.run("UPDATE nodes SET surfacing = ?, updated = ? WHERE id = ?", [s, ctx.now().toISOString(), id]);
   audit(ctx, "owner", "node.surfacing", id, true, { from: node.surfacing, to: s });

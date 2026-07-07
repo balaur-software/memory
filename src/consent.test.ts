@@ -195,3 +195,119 @@ describe("decide (I5)", () => {
     );
   });
 });
+
+describe("the gate's write/verdict boundary refuses malformed inputs (bug fix)", () => {
+  test("the merge branch enforces the type's props schema, same as the create branch (review-2 F3)", () => {
+    store.registerType({
+      name: "scored",
+      bornStatus: "proposed",
+      propsSchema: { score: { type: "number", required: true } },
+    });
+    const first = store.propose({
+      type: "scored",
+      title: "Feedback style",
+      body: "",
+      props: { score: 4 },
+      origin: "t",
+    });
+    expect(first.kind).toBe("created");
+
+    // a schema-violating prop through the duplicate-title merge path refuses
+    // as a MemoryError — NOT a raw SQLite/CHECK-constraint error — and the
+    // pending node is left untouched.
+    expect(() =>
+      store.propose({
+        type: "scored",
+        title: "  feedback STYLE ",
+        body: "b",
+        props: { score: "not-a-number" },
+        origin: "t2",
+      }),
+    ).toThrow(MemoryError);
+    expect(store.getNode(first.node.id).props["score"]).toBe(4);
+    expect(store.getNode(first.node.id).body).toBe("");
+
+    // an out-of-range importance through the same branch is the same story.
+    expect(() =>
+      store.propose({
+        type: "scored",
+        title: "  feedback STYLE ",
+        body: "b",
+        props: { score: 5 },
+        importance: 9,
+        origin: "t3",
+      }),
+    ).toThrow(MemoryError);
+    expect(store.getNode(first.node.id).importance).toBe(0);
+  });
+
+  test("a valid merge through the schema-enforced branch still applies", () => {
+    store.registerType({
+      name: "scored",
+      bornStatus: "proposed",
+      propsSchema: { score: { type: "number", required: true } },
+    });
+    const first = store.propose({
+      type: "scored",
+      title: "Feedback style",
+      body: "",
+      props: { score: 4 },
+      origin: "t",
+    });
+    const merged = store.propose({
+      type: "scored",
+      title: "feedback style",
+      body: "revised",
+      props: { score: 7 },
+      origin: "t2",
+    });
+    expect(merged.kind).toBe("merged_pending");
+    expect(merged.node.id).toBe(first.node.id);
+    expect(merged.node.props["score"]).toBe(7);
+    expect(merged.node.body).toBe("revised");
+  });
+
+  test("decide refuses an unknown kind on a proposal — no false audit, node stays proposed", () => {
+    const p = mem("Prefers async standups");
+    const db = new Database(join(dir, "memory.db"), { readonly: true });
+    const before = (
+      db.query("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'consent.decide'").get() as { c: number }
+    ).c;
+    db.close();
+
+    expect(() => store.decide(p.node.id, { kind: "nope" } as never)).toThrow(MemoryError);
+    expect(store.getNode(p.node.id).status).toBe("proposed");
+
+    const db2 = new Database(join(dir, "memory.db"), { readonly: true });
+    const after = (
+      db2.query("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'consent.decide'").get() as { c: number }
+    ).c;
+    db2.close();
+    expect(after).toBe(before); // no forged audit row for a decision that never ran
+  });
+
+  test("decide refuses an unknown kind on a parked edit — the edit survives, no false audit", () => {
+    const p = mem("Reviews PRs on Fridays", "reviews PRs on Fridays");
+    store.decide(p.node.id, { kind: "approve" });
+    store.proposeEdit(p.node.id, { fields: { body: "reviews PRs on Thursdays" }, origin: "t" });
+    const queueBefore = store.pendingQueue().length;
+
+    const db = new Database(join(dir, "memory.db"), { readonly: true });
+    const before = (
+      db.query("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'consent.decide'").get() as { c: number }
+    ).c;
+    db.close();
+
+    expect(() => store.decide(p.node.id, { kind: "aprove" } as never)).toThrow(MemoryError);
+
+    expect(store.pendingQueue().length).toBe(queueBefore); // the parked edit survives
+    expect(store.getNode(p.node.id).body).toBe("reviews PRs on Fridays"); // unapplied, untouched
+
+    const db2 = new Database(join(dir, "memory.db"), { readonly: true });
+    const after = (
+      db2.query("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'consent.decide'").get() as { c: number }
+    ).c;
+    db2.close();
+    expect(after).toBe(before); // no forged audit row
+  });
+});

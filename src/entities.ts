@@ -264,6 +264,11 @@ function dropQuestion(ctx: Ctx, a: string, b: string): void {
  * rolls back audited owner actions.
  */
 export function decideIdentity(ctx: Ctx, keep: NodeId, other: NodeId, verdict: "same" | "different"): Node {
+  if (verdict !== "same" && verdict !== "different")
+    throw new MemoryError(
+      "props_invalid",
+      `verdict must be "same" or "different", got ${JSON.stringify(verdict)}`,
+    );
   if (keep === other) throw new MemoryError("conflict", "a node cannot be merged with itself");
   const keeper = mustGet(ctx, keep);
   const dup = mustGet(ctx, other);

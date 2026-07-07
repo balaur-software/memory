@@ -322,6 +322,20 @@ describe("decideIdentity: the golden two-Anas merge (Phase C)", () => {
     expect(() => store.decideIdentity(c.id, d.id, "same")).toThrow("ACTIVE"); // husk can't re-merge
   });
 
+  test("decideIdentity whitelists its verdict — a typo cannot trigger the compound merge", () => {
+    const a = store.createNode({ type: "person", title: "Whitelist One", origin: "o" });
+    const b = store.createNode({ type: "person", title: "Whitelist Two", origin: "o" });
+    expect(() => store.decideIdentity(a.id, b.id, "Different" as never)).toThrow(MemoryError);
+    expect(store.getNode(a.id).status).toBe("active");
+    expect(store.getNode(b.id).status).toBe("active"); // not retired to a merged husk
+    const db = new Database(join(dir, "memory.db"), { readonly: true });
+    const merged = db
+      .query("SELECT COUNT(*) AS c FROM edges WHERE type = 'merged_into' AND (source = ? OR target = ?)")
+      .get(b.id, b.id) as { c: number };
+    db.close();
+    expect(merged.c).toBe(0);
+  });
+
   test("merged husks are forgettable (I8 amendment)", () => {
     const keep = store.createNode({ type: "person", title: "Keeper Q", origin: "o" });
     const dup = store.createNode({ type: "person", title: "keeper q", origin: "o" });

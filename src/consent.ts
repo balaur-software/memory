@@ -100,6 +100,10 @@ export type Decision =
   | { readonly kind: "approve_superseding"; readonly supersedes: NodeId }
   | { readonly kind: "reject" };
 
+/** Runtime whitelist for Decision.kind — TS unions do not protect JS
+ * callers, JSON-driven hosts, or future RPC surfaces (review-2 F-verb). */
+const DECISION_KINDS = ["approve", "approve_edited", "approve_superseding", "reject"] as const;
+
 // --- helpers ---
 
 function requireGatedType(ctx: Ctx, type: string): void {
@@ -151,12 +155,19 @@ export function propose(ctx: Ctx, p: Proposal): Outcome {
   if (pending !== null) {
     const props = { ...pending.props, ...(p.props ?? {}) };
     const whenAt = p.when !== undefined ? parseStrictIso(p.when, "when") : pending.when;
+    // The merge branch is a write same as any other — it must not be the
+    // one path that can mint a schema-violating node (review-2 F3). Mirror
+    // insertNode's order: range check, then schema.
+    const importance = p.importance ?? pending.importance;
+    if (!Number.isInteger(importance) || importance < 0 || importance > 5)
+      throw new MemoryError("props_invalid", "importance must be an integer between 0 and 5");
+    const checked = applyTemplateAndValidate(typeRow(ctx, p.type), p.body, props);
     ctx.mem.run(
       "UPDATE nodes SET body = ?, importance = ?, props = ?, when_at = ?, origin = ?, author = ?, updated = ? WHERE id = ?",
       [
         p.body,
-        p.importance ?? pending.importance,
-        JSON.stringify(props),
+        importance,
+        JSON.stringify(checked.props),
         whenAt,
         p.origin,
         p.author ?? "",
@@ -409,6 +420,11 @@ function clearEdit(ctx: Ctx, id: NodeId): void {
  * owner actions (I5).
  */
 export function decide(ctx: Ctx, id: NodeId, d: Decision): Node {
+  if (!(DECISION_KINDS as readonly string[]).includes(d.kind))
+    throw new MemoryError(
+      "props_invalid",
+      `unknown decision kind ${JSON.stringify((d as { kind: string }).kind)}`,
+    );
   const node = mustGet(ctx, id);
 
   if (node.status === "proposed") {

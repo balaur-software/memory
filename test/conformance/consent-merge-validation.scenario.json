@@ -1,0 +1,44 @@
+{
+  "name": "the merge branch of the AUDN gate enforces the type's props schema (I4) — a duplicate-title proposal cannot mint a schema-violating node",
+  "invariants": ["I4"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    {
+      "op": "registerType",
+      "name": "scored",
+      "bornStatus": "proposed",
+      "propsSchema": { "score": { "type": "number", "required": true } }
+    },
+    {
+      "op": "propose",
+      "as": "p1",
+      "proposal": {
+        "type": "scored",
+        "title": "Feedback style",
+        "body": "",
+        "props": { "score": 4 },
+        "origin": "t"
+      }
+    },
+    {
+      "op": "propose",
+      "proposal": {
+        "type": "scored",
+        "title": "  feedback STYLE ",
+        "body": "revised",
+        "props": { "score": "not-a-number" },
+        "origin": "t2"
+      },
+      "expectError": "props_invalid"
+    }
+  ],
+  "expect": [
+    { "sql": "SELECT status FROM nodes WHERE id = ?", "params": ["@p1.id"], "equals": "proposed" },
+    { "sql": "SELECT body FROM nodes WHERE id = ?", "params": ["@p1.id"], "equals": "" },
+    {
+      "sql": "SELECT json_extract(props, '$.score') FROM nodes WHERE id = ?",
+      "params": ["@p1.id"],
+      "equals": 4
+    }
+  ]
+}

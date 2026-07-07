@@ -129,6 +129,12 @@ describe("spine: FSM + touch + surfacing", () => {
     store.setSurfacing(n.id, "ask");
     expect(store.getNode(n.id).surfacing).toBe("ask");
   });
+
+  test("setSurfacing whitelists its input — a bad value refuses as MemoryError, not a raw CHECK-constraint error", () => {
+    const n = store.createNode({ type: "note", title: "N", origin: "t" });
+    expect(() => store.setSurfacing(n.id, "sometimes" as never)).toThrow(MemoryError);
+    expect(store.getNode(n.id).surfacing).toBe("always"); // untouched
+  });
 });
 
 describe("index discipline (I13) + audit (I7/I12)", () => {
