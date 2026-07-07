@@ -130,6 +130,84 @@ describe("children (G2)", () => {
   });
 });
 
+describe("net worth (holdings) host pattern (HOSTING §11)", () => {
+  const netWorth = (accounts: { id: import("./types.ts").NodeId }[], asOf: string) => {
+    const totals: Record<string, number> = {};
+    for (const acct of accounts) {
+      const latest = store
+        .children(acct.id as import("./types.ts").NodeId, "snapshot_of")
+        .filter((n) => n.when && n.when <= asOf)
+        .sort((a, b) => (a.when! < b.when! ? 1 : -1))[0];
+      if (!latest) continue;
+      const { balance_minor, currency } = latest.props as { balance_minor: number; currency: string };
+      totals[currency] = (totals[currency] ?? 0) + balance_minor;
+    }
+    return totals;
+  };
+
+  test("latest-per-account, liabilities net, point-in-time, ask stays out of ambient recall", () => {
+    store.registerType({ name: "account", bornStatus: "active" });
+    store.registerType({
+      name: "holding",
+      bornStatus: "active",
+      propsSchema: {
+        balance_minor: { type: "number", required: true },
+        currency: { type: "string", required: true },
+      },
+    });
+
+    const checking = store.createNode({ type: "account", title: "ING current", origin: "setup" });
+    const card = store.createNode({ type: "account", title: "Visa", origin: "setup" });
+    const brokerage = store.createNode({ type: "account", title: "IBKR", origin: "setup" });
+    const accounts = [checking, card, brokerage];
+
+    const mint = (acct: (typeof accounts)[number], when: string, balance_minor: number, currency = "EUR") =>
+      store.link(
+        store.createNode({
+          type: "holding",
+          title: acct.title,
+          when,
+          surfacing: "ask",
+          props: { balance_minor, currency },
+          origin: "import",
+        }).id,
+        acct.id,
+        "snapshot_of",
+      );
+
+    mint(checking, "2026-07-01", 421_000); // €4,210.00 asset
+    mint(card, "2026-07-01", -89_000); // −€890.00 liability
+    mint(brokerage, "2026-07-01", 1_000_00, "USD"); // separate currency, not summed into EUR
+    // a later statement supersedes by recency, not by mutation — the series is append-only
+    mint(checking, "2026-08-01", 500_000);
+    mint(card, "2026-08-01", -50_000);
+
+    // before any snapshot: nothing to sum
+    expect(netWorth(accounts, "2026-06-30")).toEqual({});
+
+    // July: liabilities net against assets, currencies stay apart
+    expect(netWorth(accounts, "2026-07-15")).toEqual({ EUR: 421_000 - 89_000, USD: 1_000_00 });
+
+    // August: latest snapshot per account wins (not the sum of all readings)
+    expect(netWorth(accounts, "2026-08-15")).toEqual({ EUR: 500_000 - 50_000, USD: 1_000_00 });
+
+    // the money never surfaces in ambient recall (ask + unrelated query, I2)
+    expect(store.search(["weekend", "plans"])).toEqual([]);
+    // but the per-account series is reachable by traversal
+    expect(store.children(checking.id, "snapshot_of")).toHaveLength(2);
+
+    // integer minor units are enforced — a float-y string is refused at the schema
+    expect(() =>
+      store.createNode({
+        type: "holding",
+        title: "bad",
+        props: { balance_minor: "1,200", currency: "EUR" },
+        origin: "import",
+      }),
+    ).toThrow("must be a number");
+  });
+});
+
 describe("the owner fast path on gated types (G7)", () => {
   test("snooze is one call; done-with-outcome is two; agents still route through the queue", () => {
     const t = store.createNode({ type: "task", title: "Call Ana", when: "2026-07-08", origin: "o" });

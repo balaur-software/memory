@@ -235,6 +235,102 @@ store.backup(`${backupDir}/memory-${stamp}.db`);   // VACUUM INTO: WAL-safe, com
 - Keep generations (daily/weekly/monthly) on separate media; the file is
   small (personal scale) and `VACUUM INTO` output compresses well.
 
+## 11 · Net worth (point-in-time holdings)
+
+Money is the measurement pattern (§3) with two twists: you sum the
+**latest** reading per account (not every reading), and a **liability is a
+negative balance** — so one `SUM` nets assets against debts. The library
+stores the declared number and the declared moment; the arithmetic, the
+currency, and the FX are yours. This is tracking, not budgeting: point-in-
+time state, no categories, no forecasts.
+
+Register once. Use integer **minor units** (cents) — never floats: money
+in JSON floats is the drift bug you don't want, and the schema pins
+`number`. Snapshots are born `surfacing: "ask"` so a balance never turns
+up in ambient recall — only when you name the account.
+
+```ts
+store.registerType({ name: "account", bornStatus: "active" });
+store.registerType({
+  name: "holding", bornStatus: "active",
+  propsSchema: { balance_minor: { type: "number", required: true },
+                 currency:      { type: "string", required: true } },
+});
+```
+
+One `account` node per real account — **assets and liabilities alike** (a
+mortgage is an account whose balances are negative). Each statement is one
+`holding` snapshot, `when` = the balance's as-of moment, linked
+`snapshot_of` → account. Correcting an account's history means adding a
+snapshot, never mutating one: the series is append-only, and
+`children(account, "snapshot_of")` replays it.
+
+```ts
+const checking = store.createNode({ type: "account", title: "ING · current", origin: "setup" });
+const card     = store.createNode({ type: "account", title: "Visa", origin: "setup" });
+
+const mint = (acct: Node, when: string, balance_minor: number, currency = "EUR", src = "import") =>
+  store.link(
+    store.createNode({
+      type: "holding", title: acct.title, when, surfacing: "ask",
+      props: { balance_minor, currency }, origin: src,
+    }).id,
+    acct.id, "snapshot_of",
+  );
+
+mint(checking, "2026-07-01", 421_000);   // €4,210.00 asset
+mint(card,     "2026-07-01", -89_000);   // −€890.00 liability
+```
+
+**Net worth as of a date = the newest snapshot per account, summed per
+currency.** The honest read is a single SQL statement over the read-only
+file (§3's rule — analytics never goes through the writer):
+
+```sql
+WITH ranked AS (
+  SELECT e.target AS account,
+         json_extract(n.props,'$.currency')                      AS currency,
+         CAST(json_extract(n.props,'$.balance_minor') AS INTEGER) AS bal,
+         ROW_NUMBER() OVER (PARTITION BY e.target ORDER BY n.when_at DESC) AS rn
+  FROM nodes n
+  JOIN edges e ON e.source = n.id AND e.type = 'snapshot_of'
+  WHERE n.type = 'holding' AND n.status = 'active' AND n.when_at <= :asof
+)
+SELECT currency, SUM(bal) AS net_minor FROM ranked WHERE rn = 1 GROUP BY currency;
+```
+
+`when_at <= :asof` gives you any historical moment for free; drop it for
+"right now". The result is per-currency minor units — a single headline
+number is an FX decision the library will not make for you.
+
+Without SQL, the same read is `children` per account and a JS reduce
+(fine at personal scale, and it is exactly what the probe test asserts):
+
+```ts
+function netWorth(accounts: Node[], asOf: string): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const acct of accounts) {
+    const latest = store.children(acct.id, "snapshot_of")
+      .filter((n) => n.when && n.when <= asOf)
+      .sort((a, b) => (a.when! < b.when! ? 1 : -1))[0];   // newest wins
+    if (!latest) continue;
+    const { balance_minor, currency } = latest.props as { balance_minor: number; currency: string };
+    totals[currency] = (totals[currency] ?? 0) + balance_minor;
+  }
+  return totals;
+}
+```
+
+Rules of thumb: **minor units, always** (a `"1,200"` string is refused by
+the schema, a float would drift); **liabilities are negative accounts**
+(no separate type, `SUM` does the netting); **`ask` surfacing** keeps
+balances out of ambient recall (use `never` if even a named search must
+not surface them — but then `children` skips them too, so you aggregate
+over SQL or held ids); **`when` is the as-of moment, `created` is when you
+imported it** — correcting last month's figure keeps both straight; and
+**assets you sold get an `owns` edge with `valid_until`** (§8 / I15) so
+`neighborhood(asOf)` reconstructs what you held on any past date.
+
 ## The daily tick (putting it together)
 
 A host's once-a-day job, in order: materialize due recurrence instances →
