@@ -72,7 +72,8 @@ export interface StoreContract {
    * route through proposeEdit/decide. `props` REPLACES wholesale (loud on
    * purpose); `propsPatch` merges shallowly, a null value removing its key
    * (RFC 7386 style) — choose one. `when`: undefined = unchanged, null =
-   * clear, string = validated set (I17). */
+   * clear, string = validated set (I17). Template defaults apply at birth
+   * only — an edit can remove a templated key. */
   updateNode(
     id: NodeId,
     patch: { title?: string; body?: string; props?: Props; propsPatch?: Props; when?: string | null },

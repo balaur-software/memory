@@ -54,6 +54,45 @@ describe("propsPatch (G3)", () => {
     store.updateNode(n.id, { propsPatch: { b: 2 } });
     expect(store.history(n.id)[0]?.props).toEqual({ a: 1 });
   });
+
+  test("template prop-fill is birth-only — null-removing a templated key does not resurrect it (plan 008)", () => {
+    store.registerType({
+      name: "ticket",
+      bornStatus: "active",
+      template: { props: { prio: "normal" } },
+    });
+    const n = store.createNode({ type: "ticket", title: "Ticket 1", origin: "o" });
+    expect(n.props).toEqual({ prio: "normal" }); // template filled at birth
+
+    const patched = store.updateNode(n.id, { propsPatch: { prio: null } });
+    expect(patched.props).toEqual({}); // removed, not re-filled from the template
+    expect(store.getNode(n.id).props).toEqual({}); // persisted, not just the return value
+  });
+
+  test("propsPatch merge doesn't drop untouched templated keys (plan 008)", () => {
+    store.registerType({
+      name: "ticket2",
+      bornStatus: "active",
+      template: { props: { prio: "normal" } },
+    });
+    const n = store.createNode({ type: "ticket2", title: "Ticket 2", origin: "o" });
+    const patched = store.updateNode(n.id, { propsPatch: { other: "x" } });
+    expect(patched.props).toEqual({ prio: "normal", other: "x" }); // untouched keys survive the merge
+  });
+
+  test("a required schema prop supplied only by the template cannot be null-removed on edit (plan 008)", () => {
+    store.registerType({
+      name: "gated-required",
+      bornStatus: "active",
+      propsSchema: { level: { type: "string", required: true } },
+      template: { props: { level: "info" } },
+    });
+    const g = store.createNode({ type: "gated-required", title: "G", origin: "o" });
+    expect(g.props).toEqual({ level: "info" }); // template supplies the required prop at birth
+    // removal is now real (birth-only fill), so validation catches the now-missing required prop
+    expect(() => store.updateNode(g.id, { propsPatch: { level: null } })).toThrow(MemoryError);
+    expect(() => store.updateNode(g.id, { propsPatch: { level: null } })).toThrow("required");
+  });
 });
 
 describe("episode (G1)", () => {

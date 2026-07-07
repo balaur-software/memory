@@ -6,7 +6,7 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "./store.ts";
@@ -203,6 +203,61 @@ describe("parseProps (review #7, #15)", () => {
   });
 });
 
+describe("corrupt registry/envelope JSON degrades, not bricks (plan 008)", () => {
+  test("corrupt node_types.template does not brick createNode — template treated as empty", () => {
+    store.registerType({
+      name: "templated",
+      bornStatus: "active",
+      template: { body: "default body", props: { prio: "normal" } },
+    });
+    store.close();
+    const db = new Database(join(dir, "memory.db"));
+    db.query("UPDATE node_types SET template = '{not json' WHERE name = ?").run("templated");
+    db.close();
+    store = Store.open({ dir, now });
+    const n = store.createNode({ type: "templated", title: "T", origin: "t" });
+    expect(n.body).toBe(""); // template body not applied — degraded to {}
+    expect(n.props).toEqual({}); // template props not applied
+  });
+
+  test("corrupt node_types.props_schema does not brick createNode or updateNode — writes proceed unvalidated", () => {
+    store.registerType({
+      name: "schemaed",
+      bornStatus: "active",
+      propsSchema: { level: { type: "string", required: true } },
+    });
+    store.close();
+    const db = new Database(join(dir, "memory.db"));
+    db.query("UPDATE node_types SET props_schema = '{not json' WHERE name = ?").run("schemaed");
+    db.close();
+    store = Store.open({ dir, now });
+    // createNode succeeds even though the (now-invisible) schema would have required 'level'
+    const n = store.createNode({ type: "schemaed", title: "S", origin: "t" });
+    expect(n.props).toEqual({});
+    const u = store.updateNode(n.id, { props: { anything: "goes" } });
+    expect(u.props).toEqual({ anything: "goes" });
+  });
+
+  test("a corrupt pending_edits.fields cell does not brick pendingQueue — renders with empty fields", () => {
+    store.registerType({ name: "gated", bornStatus: "proposed" });
+    const p = store.propose({ type: "gated", title: "Proposed", body: "v1", origin: "t" });
+    store.decide(p.node.id, { kind: "approve" });
+    store.proposeEdit(p.node.id, { fields: { body: "v2" }, origin: "t" });
+    store.close();
+    const db = new Database(join(dir, "memory.db"));
+    db.query("UPDATE pending_edits SET fields = '{not json' WHERE node_id = ?").run(p.node.id);
+    db.close();
+    store = Store.open({ dir, now });
+    let queue: ReturnType<Store["pendingQueue"]> = [];
+    expect(() => {
+      queue = store.pendingQueue();
+    }).not.toThrow();
+    const item = queue.find((x) => x.kind === "edit");
+    expect(item).toBeDefined();
+    if (item?.kind === "edit") expect(item.edit.fields).toEqual({}); // damaged envelope, empty fields
+  });
+});
+
 describe("review-2 fixes", () => {
   test("decide() on an identity-question node points at decideIdentity (F9)", () => {
     const a = store.createNode({ type: "note", title: "Twin Fact", origin: "t" });
@@ -309,6 +364,26 @@ describe("store files are private by default (plan 003)", () => {
       expect(statSync(target).mode & 0o777).toBe(0o600);
     } finally {
       rmSync(backupDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("backup guards (plan 008)", () => {
+  test("backup refuses a target inside the live store directory", () => {
+    expect(() => store.backup(join(dir, "anything.db"))).toThrow("store directory");
+    expect(() => store.backup(join(dir, "memory.db-wal"))).toThrow("store directory");
+  });
+
+  test("a failed VACUUM leaves no partial backup file", () => {
+    const nonWritableDir = mkdtempSync(join(tmpdir(), "bm-hardening-nowrite-"));
+    const target = join(nonWritableDir, "x.db");
+    chmodSync(nonWritableDir, 0o500); // read+execute only: VACUUM INTO cannot create the file
+    try {
+      expect(() => store.backup(target)).toThrow();
+      expect(existsSync(target)).toBe(false); // the failed attempt left no wedged partial file
+    } finally {
+      chmodSync(nonWritableDir, 0o700); // restore before rm
+      rmSync(nonWritableDir, { recursive: true, force: true });
     }
   });
 });

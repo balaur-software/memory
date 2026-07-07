@@ -6,7 +6,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Conflict, Decision, EditChange, Outcome, Pending, Proposal } from "./consent.ts";
 import * as consent from "./consent.ts";
 import type { DoctorReport, RecallOptions, StoreContract } from "./contract.ts";
@@ -43,10 +43,12 @@ export interface StoreOptions {
 
 export class Store implements StoreContract {
   private readonly ctx: spine.Ctx;
+  private readonly dir_: string;
   private open_ = true;
 
-  private constructor(ctx: spine.Ctx) {
+  private constructor(ctx: spine.Ctx, dir: string) {
     this.ctx = ctx;
+    this.dir_ = dir;
   }
 
   static open(opts: StoreOptions): Store {
@@ -81,7 +83,7 @@ export class Store implements StoreContract {
         if (existsSync(p)) chmodSync(p, 0o600);
       }
     }
-    const store = new Store({ mem, idx, now });
+    const store = new Store({ mem, idx, now }, opts.dir);
     // Corruption (recovered) and an old-shape nodes_fts missing the
     // `surfacing` column (recreated) both leave the FTS table empty — either
     // one demands a rebuild from the record.
@@ -326,13 +328,23 @@ export class Store implements StoreContract {
   /** Snapshot the record via VACUUM INTO: WAL-safe (reads a consistent
    * snapshot including un-checkpointed writes, without blocking), and the
    * output is compacted and forensically clean. Refuses an existing
-   * target — backups never overwrite. Audited content-free. */
+   * target — backups never overwrite — and refuses a target inside the
+   * live store directory. A VACUUM INTO that fails mid-write is cleaned up
+   * rather than left as a wedged partial file. Audited content-free. */
   backup(toPath: string): void {
     const ctx = this.guard();
-    if (existsSync(toPath))
+    const resolved = resolve(toPath);
+    if (dirname(resolved) === resolve(this.dir_))
+      throw new MemoryError("props_invalid", "backup target cannot live inside the store directory");
+    if (existsSync(resolved))
       throw new MemoryError("conflict", "backup target already exists — backups never overwrite");
-    ctx.mem.run("VACUUM INTO ?", [toPath]);
-    chmodSync(toPath, 0o600); // backups carry the same privacy as the record
+    try {
+      ctx.mem.run("VACUUM INTO ?", [resolved]);
+    } catch (e) {
+      rmSync(resolved, { force: true }); // a partial backup is worse than none
+      throw e;
+    }
+    chmodSync(resolved, 0o600); // backups carry the same privacy as the record
     spine.audit(ctx, "owner", "store.backup", "", true, {});
   }
 }

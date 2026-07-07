@@ -27,7 +27,15 @@ import {
   transition,
   typeRow,
 } from "./spine.ts";
-import { MemoryError, type Node, type NodeId, normalizeText, type Props, parseStrictIso } from "./types.ts";
+import {
+  MemoryError,
+  type Node,
+  type NodeId,
+  normalizeText,
+  type Props,
+  parseJsonObject,
+  parseStrictIso,
+} from "./types.ts";
 
 // --- types (the host-facing contract) ---
 
@@ -263,7 +271,7 @@ function editEnvelopeFor(ctx: Ctx, id: NodeId): EditEnvelope | null {
   );
   if (r === null) return null;
   return {
-    fields: JSON.parse(r.fields) as Record<string, string>,
+    fields: parseJsonObject<Record<string, string>>(r.fields),
     archive: r.archive === 1,
     origin: r.origin,
     author: r.author,
@@ -352,10 +360,9 @@ function applyFields(
 ): Node {
   const node = mustGet(ctx, id);
   const t = typeRow(ctx, node.type);
-  const schema = JSON.parse(t.props_schema) as Record<
-    string,
-    { type: "string" | "number" | "boolean"; required?: boolean }
-  >;
+  const schema = parseJsonObject<
+    Record<string, { type: "string" | "number" | "boolean"; required?: boolean }>
+  >(t.props_schema);
   let title = node.title;
   let body = node.body;
   let importance = node.importance;
@@ -392,9 +399,10 @@ function applyFields(
       }
     }
   }
-  // Same validator as birth and updateNode; template body-fill stays a
-  // birth-only semantic — the edited body is used as-is.
-  const checked = applyTemplateAndValidate(t, body, props);
+  // Same validator as birth and updateNode; template fill (body AND props)
+  // stays a birth-only semantic — the edited body is used as-is, and a
+  // null-removed templated prop stays removed rather than being resurrected.
+  const checked = applyTemplateAndValidate(t, body, props, { fillTemplate: false });
   // Capture moments 2 and 3 of 3 (I16): the pre-change content, attributed
   // to the verdict that changed it — after validation, so a refused edit
   // snapshots nothing (nothing changed).

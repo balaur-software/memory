@@ -129,6 +129,20 @@ export function parseProps(raw: string): Props {
   }
 }
 
+/** parseProps' sibling for other row-level JSON objects (type templates,
+ * prop schemas, edit envelopes): same degrade-don't-brick contract
+ * (CODING.md). Damage is surfaced by the callers' audited warnings, not
+ * by an untyped throw. */
+export function parseJsonObject<T extends Record<string, unknown>>(raw: string): T {
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (typeof v === "object" && v !== null && !Array.isArray(v)) return v as T;
+    return {} as T;
+  } catch {
+    return {} as T;
+  }
+}
+
 /** Typed failure for broken invariants and programmer error — domain forks
  * are return values, not exceptions (DESIGN.md "Errors and outcomes"). */
 export class MemoryError extends Error {

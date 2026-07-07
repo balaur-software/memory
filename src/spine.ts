@@ -18,6 +18,7 @@ import {
   type NodeTypeSpec,
   normalizeText,
   type Props,
+  parseJsonObject,
   parseProps,
   parseStrictIso,
   type Status,
@@ -174,18 +175,23 @@ export function typeRow(ctx: Ctx, name: string): TypeRow {
 /** Apply the type's template (fill empty body / missing prop keys), then
  * validate declared props: required present, primitives type-checked.
  * Undeclared keys pass through — an empty schema allows any props.
- * Exported: the consent decide path runs the same validation (review-2 F3). */
+ * Exported: the consent decide path runs the same validation (review-2 F3).
+ * Template prop-fill is a birth-only semantic (opts.fillTemplate defaults to
+ * true for that reason) — an edit can remove a templated key; callers that
+ * mutate an existing node pass { fillTemplate: false } so the edit's result
+ * is exactly what was stated, not silently re-filled from the template. */
 export function applyTemplateAndValidate(
   t: TypeRow,
   body: string,
   props: Props,
+  opts: { fillTemplate?: boolean } = {},
 ): { body: string; props: Record<string, unknown> } {
-  const template = JSON.parse(t.template) as { body?: string; props?: Record<string, unknown> };
-  const schema = JSON.parse(t.props_schema) as Record<
-    string,
-    { type: "string" | "number" | "boolean"; required?: boolean }
-  >;
-  const merged: Record<string, unknown> = { ...(template.props ?? {}), ...props };
+  const fill = opts.fillTemplate ?? true;
+  const template = parseJsonObject<{ body?: string; props?: Record<string, unknown> }>(t.template);
+  const schema = parseJsonObject<
+    Record<string, { type: "string" | "number" | "boolean"; required?: boolean }>
+  >(t.props_schema);
+  const merged: Record<string, unknown> = fill ? { ...(template.props ?? {}), ...props } : { ...props };
   const outBody = body !== "" ? body : (template.body ?? "");
   for (const [key, def] of Object.entries(schema)) {
     const v = merged[key];
@@ -416,7 +422,10 @@ export function updateNode(
   // propsPatch: RFC 7386-style shallow merge — keys merge in, a null value
   // REMOVES its key (review-3 G3: incremental fields like outcome/seq no
   // longer risk clobbering their siblings). Whole-replace stays available
-  // and loud via `props`.
+  // and loud via `props`. Template defaults apply at birth only — an edit
+  // can remove a templated key; neither branch below re-fills from the
+  // template (fillTemplate: false), so a null-removed templated prop stays
+  // removed instead of being silently resurrected.
   let mergedProps: Props | undefined;
   if (patch.propsPatch !== undefined) {
     const merged: Record<string, unknown> = { ...node.props };
@@ -428,9 +437,9 @@ export function updateNode(
   }
   const nextProps =
     patch.props !== undefined
-      ? applyTemplateAndValidate(t, nextBody, patch.props).props
+      ? applyTemplateAndValidate(t, nextBody, patch.props, { fillTemplate: false }).props
       : mergedProps !== undefined
-        ? applyTemplateAndValidate(t, nextBody, mergedProps).props
+        ? applyTemplateAndValidate(t, nextBody, mergedProps, { fillTemplate: false }).props
         : (node.props as Record<string, unknown>);
   // when: undefined = unchanged; null = clear; string = validated set (I17).
   const nextWhen =
