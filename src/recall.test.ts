@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -93,6 +94,61 @@ describe("recall: I2 surfacing semantics", () => {
         .map((n) => n.title)
         .sort(),
     ).toEqual(["Vermeil note", "Vermeil person"]);
+  });
+});
+
+describe("recall: candidate cap starvation (plan 007)", () => {
+  test("60 never-surfaced matches don't starve the candidate cap; the 1 eligible match still surfaces", () => {
+    for (let i = 0; i < 60; i++) {
+      const decoy = store.createNode({
+        type: "note",
+        title: `Zebra decoy ${i}`,
+        body: "zebra",
+        origin: "t",
+      });
+      store.setSurfacing(decoy.id, "never");
+    }
+    const eligible = store.createNode({
+      type: "note",
+      title: "Zebra migration notes",
+      body: "zebra",
+      origin: "t",
+    });
+    const titles = store.recall(["zebra"], { limit: 1 }).map((n) => n.title);
+    expect(titles).toEqual(["Zebra migration notes"]);
+    expect(eligible.surfacing).toBe("always");
+  });
+
+  test("setSurfacing flip is reflected in recall immediately, both directions, without rebuildIndex()", () => {
+    const n = store.createNode({ type: "note", title: "Flip candidate", body: "quokka", origin: "t" });
+    expect(store.recall(["quokka"]).map((x) => x.id)).toContain(n.id);
+    store.setSurfacing(n.id, "never");
+    expect(store.recall(["quokka"]).map((x) => x.id)).not.toContain(n.id);
+    store.setSurfacing(n.id, "always");
+    expect(store.recall(["quokka"]).map((x) => x.id)).toContain(n.id);
+  });
+});
+
+describe("recall: index.db self-heal (plan 007)", () => {
+  test("an old 5-column nodes_fts (pre-surfacing) self-heals on open: recall works, column exists", () => {
+    const n = store.createNode({ type: "note", title: "Heals fine", body: "quartzite", origin: "t" });
+    store.close();
+
+    const idx = new Database(join(dir, "index.db"));
+    idx.exec("DROP TABLE nodes_fts;");
+    idx.exec(
+      "CREATE VIRTUAL TABLE nodes_fts USING fts5(id UNINDEXED, kind UNINDEXED, title, content, extra);",
+    );
+    idx.close();
+
+    store = Store.open({ dir, now }); // must not throw; must self-heal
+
+    const check = new Database(join(dir, "index.db"), { readonly: true });
+    const cols = check.query("SELECT name FROM pragma_table_info('nodes_fts')").all() as { name: string }[];
+    check.close();
+    expect(cols.some((c) => c.name === "surfacing")).toBe(true);
+
+    expect(store.recall(["quartzite"]).map((x) => x.id)).toContain(n.id);
   });
 });
 

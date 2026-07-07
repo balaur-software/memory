@@ -110,16 +110,23 @@ export function lexicalCandidates(
   terms: readonly string[],
   kind: string | undefined,
   cap: number,
+  excludeNever = false,
 ): Candidate[] {
   if (terms.length === 0) return [];
   const expr = matchExpr(terms);
   if (expr === "") return [];
   // Ambient (untyped) recall excludes day-anchor plumbing (review #8); an
   // explicit type filter — including type:"day" — reaches everything.
+  // excludeNever (recall only — I2): 'never' rows are unreachable in recall,
+  // so keeping them out of the candidate universe stops them starving the
+  // cap; 'ask' rows stay IN — loadEligible's title-named rule still decides
+  // them. conflictsFor and the forget mention-scan pass the default (false)
+  // to keep their existing universe unchanged.
+  const nf = excludeNever ? " AND surfacing != 'never'" : "";
   const sql =
     kind === undefined
-      ? "SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ? AND kind != 'day' ORDER BY rank LIMIT ?"
-      : "SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ? AND kind = ? ORDER BY rank LIMIT ?";
+      ? `SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ?${nf} AND kind != 'day' ORDER BY rank LIMIT ?`
+      : `SELECT id, -rank AS rel FROM nodes_fts WHERE nodes_fts MATCH ?${nf} AND kind = ? ORDER BY rank LIMIT ?`;
   const params = kind === undefined ? [expr, cap] : [expr, kind, cap];
   return ctx.idx.query<{ id: string; rel: number }>(sql, params).map((r) => ({ id: r.id, rel: r.rel }));
 }
@@ -217,7 +224,7 @@ export function recall(ctx: Ctx, terms: readonly string[], opts: RecallOptions =
   const nowMs = ctx.now().getTime();
   const cap = limit * CANDIDATE_FACTOR + 16;
 
-  const lex = lexicalCandidates(ctx, terms, opts.type, cap);
+  const lex = lexicalCandidates(ctx, terms, opts.type, cap, true);
   const nodes = loadEligible(
     ctx,
     lex.map((c) => c.id),
@@ -242,12 +249,22 @@ export function recall(ctx: Ctx, terms: readonly string[], opts: RecallOptions =
     if (sim !== null) sims.push({ id, sim });
   }
   sims.sort((a, b) => b.sim - a.sim);
-  const vecIds = sims.slice(0, cap).map((s) => s.id);
-  const vecNodes = loadEligible(ctx, vecIds, []); // no terms → 'ask' rows drop (I2)
+  // Eligibility + type restriction happen BEFORE the cap slice — otherwise
+  // ineligible ('never'/non-title-named 'ask') or wrong-type rows near the
+  // top of the similarity order could starve the cap the same way the
+  // lexical stage used to (the fix this file exists for).
+  const vecNodes = loadEligible(
+    ctx,
+    sims.map((s) => s.id),
+    [],
+  ); // no terms → 'ask' rows drop (I2)
   if (opts.type !== undefined) {
     for (const [id, n] of vecNodes) if (n.type !== opts.type) vecNodes.delete(id);
   }
-  const vecRanked = vecIds.filter((id) => vecNodes.has(id));
+  const vecRanked = sims
+    .map((s) => s.id)
+    .filter((id) => vecNodes.has(id))
+    .slice(0, cap);
 
   const rrf = new Map<string, number>();
   lexRanked.forEach((c, i) => {

@@ -155,7 +155,7 @@ surfaces the node in recall) and the forget cascade deletes them (I6).
 
 ```sql
 CREATE VIRTUAL TABLE nodes_fts USING fts5(
-  id UNINDEXED, kind UNINDEXED, title, content, extra
+  id UNINDEXED, kind UNINDEXED, surfacing UNINDEXED, title, content, extra
 );
 CREATE TABLE vectors (
   id    TEXT NOT NULL,              -- node id
@@ -165,6 +165,16 @@ CREATE TABLE vectors (
   PRIMARY KEY (id, model)
 ) STRICT;
 ```
+
+`nodes_fts.surfacing` mirrors `nodes.surfacing` (kept in sync by every
+writer that touches the index — `upsertFts`, `rebuildFts`, and
+`setSurfacing`'s reindex) so the query-time universe can exclude
+`surfacing='never'` rows in SQL rather than truncating the candidate cap
+before `loadEligible`'s memory.db filter gets a chance to apply it — a
+store dense with `never`/`ask` rows would otherwise starve out eligible
+matches (I2). `loadEligible` remains the sole authority on eligibility:
+this column is a candidate-universe optimization only, since index.db rows
+can be stale between writes (I13).
 
 ## System edge types
 

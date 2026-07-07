@@ -273,6 +273,7 @@ function fanOut(ctx: Ctx, node: Node): void {
     upsertFts(ctx.idx, {
       id: node.id,
       kind: node.type,
+      surfacing: node.surfacing,
       title: node.title,
       content: node.body,
       extra: extraText(ctx, node),
@@ -470,6 +471,7 @@ export function reindexNode(ctx: Ctx, node: Node): void {
     upsertFts(ctx.idx, {
       id: node.id,
       kind: node.type,
+      surfacing: node.surfacing,
       title: node.title,
       content: node.body,
       extra: extraText(ctx, node),
@@ -700,6 +702,7 @@ export function setSurfacing(ctx: Ctx, id: NodeId, s: Surfacing): void {
   const node = mustGet(ctx, id);
   ctx.mem.run("UPDATE nodes SET surfacing = ?, updated = ? WHERE id = ?", [s, ctx.now().toISOString(), id]);
   audit(ctx, "owner", "node.surfacing", id, true, { from: node.surfacing, to: s });
+  reindexNode(ctx, mustGet(ctx, id)); // surfacing now gates the index's candidate universe
 }
 
 /** Record that recalled knowledge was actually used. Deliberately does NOT

@@ -15,6 +15,7 @@ import { parseProps } from "../types.ts";
 export interface FtsDoc {
   readonly id: string;
   readonly kind: string;
+  readonly surfacing: string;
   readonly title: string;
   readonly content: string;
   readonly extra: string;
@@ -39,9 +40,10 @@ export function aliasTextFor(mem: SqlDb, id: string): string {
 export function upsertFts(idx: SqlDb, doc: FtsDoc): void {
   idx.run("DELETE FROM nodes_fts WHERE id = ?", [doc.id]);
   if (doc.status !== "active") return;
-  idx.run("INSERT INTO nodes_fts (id, kind, title, content, extra) VALUES (?, ?, ?, ?, ?)", [
+  idx.run("INSERT INTO nodes_fts (id, kind, surfacing, title, content, extra) VALUES (?, ?, ?, ?, ?, ?)", [
     doc.id,
     doc.kind,
+    doc.surfacing,
     doc.title,
     doc.content,
     doc.extra,
@@ -65,22 +67,20 @@ export function rebuildFts(idx: SqlDb, mem: SqlDb): void {
       title: string;
       body: string;
       props: string;
+      surfacing: string;
       als: string;
     }>(
-      `SELECT n.id, n.type, n.title, n.body, n.props,
+      `SELECT n.id, n.type, n.title, n.body, n.props, n.surfacing,
               COALESCE(GROUP_CONCAT(a.alias, ' ' ORDER BY a.alias), '') AS als
        FROM nodes n LEFT JOIN aliases a ON a.node_id = n.id
        WHERE n.status = 'active' GROUP BY n.id`,
     );
     for (const r of rows) {
       const props = parseProps(r.props) as Record<string, unknown>;
-      idx.run("INSERT INTO nodes_fts (id, kind, title, content, extra) VALUES (?, ?, ?, ?, ?)", [
-        r.id,
-        r.type,
-        r.title,
-        r.body,
-        extraOf(props, r.als),
-      ]);
+      idx.run(
+        "INSERT INTO nodes_fts (id, kind, surfacing, title, content, extra) VALUES (?, ?, ?, ?, ?, ?)",
+        [r.id, r.type, r.surfacing, r.title, r.body, extraOf(props, r.als)],
+      );
     }
   });
 }

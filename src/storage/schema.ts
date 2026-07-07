@@ -94,7 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
 
 const INDEX_DDL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
-  id UNINDEXED, kind UNINDEXED, title, content, extra
+  id UNINDEXED, kind UNINDEXED, surfacing UNINDEXED, title, content, extra
 );
 CREATE TABLE IF NOT EXISTS vectors (
   id    TEXT NOT NULL,
@@ -207,13 +207,26 @@ export function migrateMemoryDb(db: SqlDb, now: () => Date): void {
     });
 }
 
-/** Apply the index.db baseline. The whole file is disposable (I13). */
-export function migrateIndexDb(db: SqlDb): void {
+/** Apply the index.db baseline. The whole file is disposable (I13). Returns
+ * true when an old-shape `nodes_fts` was dropped and recreated — the caller
+ * must then rebuild the FTS contents from memory.db. */
+export function migrateIndexDb(db: SqlDb): boolean {
   db.exec("PRAGMA secure_delete = ON;");
   db.exec(INDEX_DDL);
+  // Pre-surfacing index files have a 5-column nodes_fts (no `surfacing`);
+  // the sidecar is disposable (I13) — drop and recreate, the caller rebuilds.
+  let recreated = false;
+  const cols = db.query<{ name: string }>("SELECT name FROM pragma_table_info('nodes_fts')");
+  if (!cols.some((c) => c.name === "surfacing")) {
+    db.exec("DROP TABLE nodes_fts;");
+    db.exec(INDEX_DDL);
+    recreated = true;
+  }
   // FTS5's own DELETE leaves tokens in old segments until a merge; this
   // command-insert form (idempotent, safe on every open) configures the
   // shadow tables to overwrite deleted entries instead of just unlinking
-  // them (SQLite >= 3.42).
+  // them (SQLite >= 3.42). MUST run after any DROP+recreate above, or the
+  // recreated table loses the setting.
   db.exec("INSERT INTO nodes_fts(nodes_fts, rank) VALUES('secure-delete', 1);");
+  return recreated;
 }

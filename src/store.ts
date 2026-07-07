@@ -62,13 +62,14 @@ export class Store implements StoreContract {
     const idxPath = join(opts.dir, "index.db");
     let idx: ReturnType<OpenDb>;
     let recovered = false;
+    let recreated = false;
     try {
       idx = openDb(idxPath);
-      migrateIndexDb(idx);
+      recreated = migrateIndexDb(idx);
     } catch {
       for (const suffix of ["", "-wal", "-shm"]) rmSync(idxPath + suffix, { force: true });
       idx = openDb(idxPath);
-      migrateIndexDb(idx);
+      recreated = migrateIndexDb(idx);
       recovered = true;
     }
     // A life's record is private by default: 0600 on every store file the
@@ -81,9 +82,12 @@ export class Store implements StoreContract {
       }
     }
     const store = new Store({ mem, idx, now });
-    if (recovered) {
+    // Corruption (recovered) and an old-shape nodes_fts missing the
+    // `surfacing` column (recreated) both leave the FTS table empty — either
+    // one demands a rebuild from the record.
+    if (recovered || recreated) {
       rebuildFts(idx, mem);
-      spine.audit(store.ctx, "system", "index.recover", "", true, { rebuilt: true });
+      spine.audit(store.ctx, "system", "index.recover", "", true, { rebuilt: true, recovered, recreated });
     }
     // Built-in episodic anchor type: every node links on_day to its creation
     // day (SCHEMA.md system edges). Hosts register their own types on top.

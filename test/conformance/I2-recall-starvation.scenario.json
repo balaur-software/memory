@@ -1,0 +1,44 @@
+{
+  "name": "I2: several never-surfaced matches cannot starve the candidate cap — the one always match still surfaces",
+  "invariants": ["I2"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    { "op": "registerType", "name": "note", "bornStatus": "active" },
+    {
+      "op": "createNode",
+      "as": "n1",
+      "input": { "type": "note", "title": "Quince decoy one", "body": "quince", "origin": "t" }
+    },
+    { "op": "setSurfacing", "id": "@n1.id", "to": "never" },
+    {
+      "op": "createNode",
+      "as": "n2",
+      "input": { "type": "note", "title": "Quince decoy two", "body": "quince", "origin": "t" }
+    },
+    { "op": "setSurfacing", "id": "@n2.id", "to": "never" },
+    {
+      "op": "createNode",
+      "as": "n3",
+      "input": { "type": "note", "title": "Quince decoy three", "body": "quince", "origin": "t" }
+    },
+    { "op": "setSurfacing", "id": "@n3.id", "to": "never" },
+    {
+      "op": "createNode",
+      "as": "n4",
+      "input": { "type": "note", "title": "Quince decoy four", "body": "quince", "origin": "t" }
+    },
+    { "op": "setSurfacing", "id": "@n4.id", "to": "never" },
+    {
+      "op": "createNode",
+      "as": "n5",
+      "input": { "type": "note", "title": "Quince decoy five", "body": "quince", "origin": "t" }
+    },
+    { "op": "setSurfacing", "id": "@n5.id", "to": "never" },
+    {
+      "op": "createNode",
+      "as": "eligible",
+      "input": { "type": "note", "title": "Quince harvest notes", "body": "quince", "origin": "t" }
+    }
+  ],
+  "expect": [{ "recall": { "terms": ["quince"], "limit": 1 }, "titles": ["Quince harvest notes"] }]
+}
