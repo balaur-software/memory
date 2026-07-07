@@ -3,6 +3,8 @@
 *.db-journal
 *.db-wal
 *.db-shm
+# ...except the committed legacy-upgrade fixtures (plan 006)
+!test/fixtures/*.db
 
 # Toolchain
 node_modules/

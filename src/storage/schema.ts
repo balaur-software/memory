@@ -160,18 +160,22 @@ CREATE INDEX IF NOT EXISTS idx_nodes_when ON nodes(when_at) WHERE when_at IS NOT
 
 /** Apply the memory.db baseline + versioned deltas (idempotent). Fresh
  * stores land directly on SCHEMA_VERSION; older stores upgrade in order.
- * Never edit an applied delta — append and bump (CODING.md). */
+ * Never edit an applied delta — append and bump (CODING.md). Each delta
+ * and its version bump commit atomically — a crash between them can no
+ * longer strand a half-migrated file. */
 export function migrateMemoryDb(db: SqlDb, now: () => Date): void {
   db.exec(MEMORY_DDL);
   const version = db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'");
   if (version === null) {
-    db.exec(V2_DDL);
-    db.exec(V3_DDL);
-    db.exec(V4_DDL);
-    const at = now().toISOString();
-    db.run("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", [String(SCHEMA_VERSION)]);
-    db.run("INSERT INTO meta (key, value) VALUES ('store_id', ?)", [ulid(now().getTime())]);
-    db.run("INSERT INTO meta (key, value) VALUES ('created', ?)", [at]);
+    db.transaction(() => {
+      db.exec(V2_DDL);
+      db.exec(V3_DDL);
+      db.exec(V4_DDL);
+      const at = now().toISOString();
+      db.run("INSERT INTO meta (key, value) VALUES ('schema_version', ?)", [String(SCHEMA_VERSION)]);
+      db.run("INSERT INTO meta (key, value) VALUES ('store_id', ?)", [ulid(now().getTime())]);
+      db.run("INSERT INTO meta (key, value) VALUES ('created', ?)", [at]);
+    });
     return;
   }
   const v = Number(version.value);
@@ -186,18 +190,21 @@ export function migrateMemoryDb(db: SqlDb, now: () => Date): void {
       "conflict",
       `memory.db is schema v${version.value}; this build supports up to v${SCHEMA_VERSION} — upgrade the library, never downgrade the file`,
     );
-  if (v < 2) {
-    db.exec(V2_DDL);
-    db.run("UPDATE meta SET value = '2' WHERE key = 'schema_version'");
-  }
-  if (v < 3) {
-    db.exec(V3_DDL);
-    db.run("UPDATE meta SET value = '3' WHERE key = 'schema_version'");
-  }
-  if (v < 4) {
-    db.exec(V4_DDL);
-    db.run("UPDATE meta SET value = '4' WHERE key = 'schema_version'");
-  }
+  if (v < 2)
+    db.transaction(() => {
+      db.exec(V2_DDL);
+      db.run("UPDATE meta SET value = '2' WHERE key = 'schema_version'");
+    });
+  if (v < 3)
+    db.transaction(() => {
+      db.exec(V3_DDL);
+      db.run("UPDATE meta SET value = '3' WHERE key = 'schema_version'");
+    });
+  if (v < 4)
+    db.transaction(() => {
+      db.exec(V4_DDL);
+      db.run("UPDATE meta SET value = '4' WHERE key = 'schema_version'");
+    });
 }
 
 /** Apply the index.db baseline. The whole file is disposable (I13). */

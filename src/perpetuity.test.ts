@@ -1,10 +1,12 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { OpenDb, SqlDb } from "./storage/adapter.ts";
+import { openBunDb } from "./storage/bun.ts";
 import { Store } from "./store.ts";
-import { MemoryError } from "./types.ts";
+import { MemoryError, type NodeId } from "./types.ts";
 
 let dir: string;
 let store: Store;
@@ -128,5 +130,102 @@ describe("the perpetuity batch (review-3)", () => {
   test("doctor().integrityOk: the file's own health, true on a healthy store", () => {
     store.createNode({ type: "note", title: "Healthy", origin: "o" });
     expect(store.doctor().integrityOk).toBe(true);
+  });
+});
+
+describe("legacy fixture upgrades, real files (plan 006)", () => {
+  const FIXTURES = join(import.meta.dir, "..", "test", "fixtures");
+
+  /** Copy a committed legacy fixture into a fresh temp dir as memory.db —
+   * never open a committed fixture in place. */
+  function copyFixture(version: "1" | "2" | "3"): string {
+    const fixDir = mkdtempSync(join(tmpdir(), `bm-fixture-v${version}-`));
+    cpSync(join(FIXTURES, `v${version}.db`), join(fixDir, "memory.db"));
+    return fixDir;
+  }
+
+  function schemaVersion(fixDir: string): string {
+    const db = new Database(join(fixDir, "memory.db"), { readonly: true });
+    const row = db.query("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string };
+    db.close();
+    return row.value;
+  }
+
+  function fixtureNodeIds(fixDir: string): { a: NodeId; b: NodeId } {
+    const db = new Database(join(fixDir, "memory.db"), { readonly: true });
+    const a = db.query("SELECT id FROM nodes WHERE title = 'Fixture A'").get() as { id: string };
+    const b = db.query("SELECT id FROM nodes WHERE title = 'Fixture B'").get() as { id: string };
+    db.close();
+    return { a: a.id as NodeId, b: b.id as NodeId };
+  }
+
+  test("v1 fixture upgrades to current schema; data intact; v3/v4 features work", () => {
+    const fixDir = copyFixture("1");
+    const s = Store.open({ dir: fixDir, now });
+    expect(schemaVersion(fixDir)).toBe("4");
+    const { a, b } = fixtureNodeIds(fixDir);
+    expect(s.getNode(a).title).toBe("Fixture A"); // pre-existing node round-trips
+    const e = s.link(a, b, "advises", "", { from: "2020-01-01" }); // v3 feature: validity
+    expect(e.validFrom).toBe("2020-01-01T00:00:00.000Z");
+    const c = s.createNode({ type: "note", title: "Scheduled", when: "2026-08-01", origin: "fixture" }); // v4
+    expect(c.when).toBe("2026-08-01T00:00:00.000Z");
+    s.close();
+    rmSync(fixDir, { recursive: true, force: true });
+  });
+
+  test("v2 fixture upgrades to current schema; data intact", () => {
+    const fixDir = copyFixture("2");
+    const s = Store.open({ dir: fixDir, now });
+    expect(schemaVersion(fixDir)).toBe("4");
+    const { a, b } = fixtureNodeIds(fixDir);
+    expect(s.getNode(a).title).toBe("Fixture A");
+    expect(s.getNode(b).body).toBe("the second row");
+    s.close();
+    rmSync(fixDir, { recursive: true, force: true });
+  });
+
+  test("v3 fixture upgrades to current schema; data intact", () => {
+    const fixDir = copyFixture("3");
+    const s = Store.open({ dir: fixDir, now });
+    expect(schemaVersion(fixDir)).toBe("4");
+    const { a, b } = fixtureNodeIds(fixDir);
+    expect(s.getNode(a).title).toBe("Fixture A");
+    expect(s.getNode(b).body).toBe("the second row");
+    s.close();
+    rmSync(fixDir, { recursive: true, force: true });
+  });
+
+  test("a crash between the v3 delta and its version bump rolls back cleanly, then retries clean (the bug plan 006 fixes)", () => {
+    const fixDir = copyFixture("2");
+
+    // Simulate a process death between `db.exec(V3_DDL)` and the
+    // `UPDATE meta ... '3'` bump: intercept exactly that statement and throw.
+    const crashOnV3Bump: OpenDb = (path) => {
+      const real = openBunDb(path);
+      return {
+        ...real,
+        run(sql, params) {
+          if (sql === "UPDATE meta SET value = '3' WHERE key = 'schema_version'") {
+            throw new Error("simulated crash between the V3 delta and its version bump");
+          }
+          return real.run(sql, params);
+        },
+      } satisfies SqlDb;
+    };
+
+    expect(() => Store.open({ dir: fixDir, now, openDb: crashOnV3Bump })).toThrow(
+      "simulated crash between the V3 delta and its version bump",
+    );
+
+    // Retry with the real opener. Pre-fix, the V3 ALTERs would have already
+    // committed outside any transaction, and this retry would die with
+    // "duplicate column name" trying to re-run them. Post-fix, the whole
+    // delta+bump rolled back together, so the retry starts clean from v2.
+    const s = Store.open({ dir: fixDir, now });
+    expect(schemaVersion(fixDir)).toBe("4");
+    const { a } = fixtureNodeIds(fixDir);
+    expect(s.getNode(a).title).toBe("Fixture A"); // data intact through the crash + retry
+    s.close();
+    rmSync(fixDir, { recursive: true, force: true });
   });
 });
