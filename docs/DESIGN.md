@@ -23,6 +23,7 @@ host app (a life-OS UI, a CLI, an agent runtime — hosts own models & pixels)
 balaur-memory (this library — synchronous, deterministic, model-free)
   ├── spine      nodes + edges + status FSM + type registry + fan-out
   ├── consent    propose gate (I4) · pending queue · decide verbs (I5)
+  ├── entities   aliases · resolveRef · identity questions · owner merges · peer card
   ├── recall     FTS + ranking blend + vector fusion (vectors in, never models)
   ├── lineage    derived_from · staleness propagation
   ├── lifecycle  surfacing · quarantine · forget cascade (I6/I7)
@@ -101,8 +102,10 @@ matching.
 src/
   index.ts        public exports, version
   store.ts        Store: open/close, migrations, transactions (the façade)
+  contract.ts     StoreContract — the compiler-checked API surface
   types.ts        domain types: branded ids, Status, Surfacing, Node, Edge, ...
   consent.ts      Proposal/Outcome/Pending/Decision + gate + queue + decide
+  entities.ts     identity: aliases, resolution, merge, peer card
   spine.ts        node/edge CRUD, FSM, type registry, write fan-out
   recall.ts       terms, blend, fusion, search
   lineage.ts      derivations, staleness

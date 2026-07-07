@@ -28,8 +28,8 @@ CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 ) STRICT;
--- rows: schema_version (integer as text, currently "2"), store_id (ulid),
---       created (timestamp)
+-- rows: schema_version (integer as text — "4", the version this document
+--       describes), store_id (ulid), created (timestamp)
 
 CREATE TABLE node_types (
   name          TEXT PRIMARY KEY,          -- "memory", "skill", "note", "person", ...

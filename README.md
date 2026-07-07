@@ -73,7 +73,7 @@ place for a life to land.
 verified — the spine, recall (blend + vector fusion), the consent gate
 (AUDN routing, queue, four verdicts incl. supersede), lifecycle end-states
 (quarantine, the honest forget cascade), lineage, and the metadata-only
-doctor. `Store implements StoreContract` is compiler-checked; 13 of 14
+doctor. `Store implements StoreContract` is compiler-checked; 16 of 17
 schema invariants are pinned by the conformance suite (I14 by
 construction) — every invariant with a possible producer has one. The
 entity arc (ENTITIES.md) is complete, all four phases: aliases,
@@ -94,7 +94,7 @@ the schema contract and the TypeScript API.
 
 | Doc | What it holds |
 |---|---|
-| [docs/SCHEMA.md](docs/SCHEMA.md) | The data contract: DDL, semantics, invariants I1–I14 |
+| [docs/SCHEMA.md](docs/SCHEMA.md) | The data contract: DDL, semantics, invariants I1–I17 |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture: sync-first, vectors-in, ranking blend, module map |
 | [docs/CODING.md](docs/CODING.md) | The rules: strict TS, zero deps, SQL discipline, tests |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Scenario-file suite any implementation can run |

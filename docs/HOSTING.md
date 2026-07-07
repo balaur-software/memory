@@ -38,6 +38,22 @@ and `updateNode` edits in place on ANY type (the host is the
 authenticator; the queue protects the owner from the agent, not from
 themselves).
 
+## Errors — what a host catches
+
+Domain forks are RETURN VALUES (`Outcome`, `ForgetReport`,
+`Pending`) — you never try/catch your way through normal flow
+(DESIGN.md "Errors and outcomes"). Exceptions mean broken invariants or
+programmer error, always as `MemoryError` with a `code` you can switch on:
+
+| code | means | typical host reaction |
+|---|---|---|
+| `not_found` | no such node/edge id | surface "gone"; drop stale refs |
+| `invalid_transition` | FSM/verb refused for this status | re-read the node, re-render |
+| `type_unknown` | type not registered | register the type first |
+| `props_invalid` | bad argument or schema-violating props | fix the call; show the message |
+| `store_closed` | use-after-close | reopen; a host lifecycle bug |
+| `conflict` | state conflict (duplicate closed edge, I9 ruling, version guard…) | read the message; usually needs an owner decision |
+
 ## 1 · The journal
 
 An entry is a node; the day anchor is automatic (`on_day` at creation).

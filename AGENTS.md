@@ -6,7 +6,7 @@ parent application. Keep this file lean and high-signal.
 
 ## The load-bearing rules
 
-- **The schema is the contract.** `docs/SCHEMA.md` (DDL + invariants I1–I14)
+- **The schema is the contract.** `docs/SCHEMA.md` (DDL + invariants I1–I17)
   outranks the code. Schema changes bump `meta.schema_version`, ship a
   migration, and update the doc in the same change. Never edit an applied
   migration.

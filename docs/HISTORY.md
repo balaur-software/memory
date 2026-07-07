@@ -50,8 +50,8 @@ existed as an actual `package.json` version or a git tag; "pre-tag era"
 is used here instead of a specific number (see `docs/RELEASE.md`
 "Backfilled tags").
 
-13 of 14 invariants are conformance-pinned (I14, single writer, holds by
-construction). `Store implements StoreContract` is compiler-checked.
+All invariants except I14 are conformance-pinned; I14 (single writer)
+holds by construction. `Store implements StoreContract` is compiler-checked.
 
 ## Deliberately out of scope
 
