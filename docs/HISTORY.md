@@ -41,6 +41,7 @@ ratification.
 | publishability — Bun-only | exports map to raw TS (no build, by design), files allowlist, engines pin; INTEGRATIONS.md sketch (MCP + pi.dev + skills over process boundaries) | DONE (PR #26, merged) |
 | scope — Bun-only + CLI standalone | two supported surfaces for now: the in-process library (primary) and the `balaur` CLI (`bunx balaur` + `bun build --compile` standalone). INTEGRATIONS.md satellite work (MCP / pi.dev / skills) deferred to a sketch. ADR-0001 containment holds for the CLI too. | DONE (tagged v0.4.3) |
 | relocate — balaur-software org | origin moved to `github:balaur-software/memory`; RELEASE.md runbook (Git-tag releases + `bun link` parallel dev); all internal URLs repointed | DONE (this change) |
+| drop the CLI | `cli/` (index/args/commands/render, ~1,200L) + `docs/CLI.md` removed; `bin`/`build`/`build:cross` dropped from `package.json` — the in-process library is now the only supported surface, per an explicit owner decision (2026-07-07): no CLI, no integrations beyond the direct Bun library | DONE (this change) |
 
 13 of 14 invariants are conformance-pinned (I14, single writer, holds by
 construction). `Store implements StoreContract` is compiler-checked.

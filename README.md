@@ -47,24 +47,8 @@ Releases are Git tags, not registry publishes — see
 [docs/RELEASE.md](docs/RELEASE.md) for the runbook and the parallel-dev
 `bun link` flow.
 
-### The `balaur` CLI (the second supported surface)
-
-The same package ships a `bin` entry — a thin host over `Store` — and a
-`bun build --compile` standalone binary for machines without Bun
-installed (ADR-0001's deployment story):
-
-```bash
-bunx balaur --help                              # via bunx, after bun add
-bunx balaur doctor                              # human-readable by default
-bunx balaur recall "lake house" --json          # pipe-friendly
-
-bun run build                                   # → dist/balaur (standalone)
-./dist/balaur --dir ~/.local/share/life pending
-```
-
-The CLI maps 1:1 to the `Store` surface; see [docs/CLI.md](docs/CLI.md)
-for the full command reference. Process-boundary integration surfaces
-(MCP server, pi.dev extension, Agent Skills) are deferred — see
+Process-boundary integration surfaces (a CLI, MCP server, pi.dev
+extension, Agent Skills) are deferred — see
 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## The two contracts
@@ -115,7 +99,6 @@ the schema contract and the TypeScript API.
 | [docs/CODING.md](docs/CODING.md) | The rules: strict TS, zero deps, SQL discipline, tests |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Scenario-file suite any implementation can run |
 | [docs/HOSTING.md](docs/HOSTING.md) | Building a life on this library — the host patterns, probe-validated |
-| [docs/CLI.md](docs/CLI.md) | The `balaur` CLI — `bunx balaur` and the `bun build --compile` standalone binary |
 | [docs/RELEASE.md](docs/RELEASE.md) | Cutting a release (Git tags, not npm) + `bun link` for parallel dev |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | Reaching the library from outside (DEFERRED): MCP, pi.dev, skills sketch |
 | [docs/FIELD.md](docs/FIELD.md) | The 2026 landscape survey: where this library stands, the steal ledger |

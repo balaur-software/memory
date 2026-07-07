@@ -9,8 +9,8 @@ bun add github:balaur-software/memory#v0.4.3
 
 Bun clones the repo at that ref and uses the raw TypeScript directly
 (ADR-0001: no build step, no `dist`). The `files` allowlist in
-`package.json` is what gets shipped — `src`, `cli`, the three contract
-docs. Bumping the install in a consumer is `bun update balaur-memory` or
+`package.json` is what gets shipped — `src`, the two contract docs.
+Bumping the install in a consumer is `bun update balaur-memory` or
 re-adding with a new tag.
 
 For parallel development against a local checkout, see
@@ -55,8 +55,7 @@ never by moving the tag.
 The `files` field in `package.json` controls it:
 
 - `src/` — the library (tests excluded via `!src/**/*.test.ts`)
-- `cli/` — the `balaur` CLI (tests excluded)
-- `docs/SCHEMA.md`, `docs/HOSTING.md`, `docs/CLI.md` — the contracts a
+- `docs/SCHEMA.md`, `docs/HOSTING.md` — the contracts a
   host needs at install time
 
 Everything else (`README.md`, `LICENSE`, `AGENTS.md`, the rest of `docs/`,

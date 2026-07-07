@@ -1,11 +1,12 @@
 # INTEGRATIONS.md — reaching the library from outside (design sketch)
 
-- **Status:** DEFERRED — not in active scope. The two supported surfaces
-  for now are the in-process library (`bun add balaur-memory`,
-  `import { Store }`) and the `balaur` CLI shipped in the same package
-  (run via `bunx balaur` or as a `bun build --compile` standalone binary
-  — see [CLI.md](CLI.md)). The sketch below is preserved as the design
-  for when satellite work resumes; nothing here is built or tracked.
+- **Status:** DEFERRED — not in active scope. The **only** supported
+  surface is the in-process library (`bun add balaur-memory`,
+  `import { Store }`). Per an explicit 2026-07 owner decision, every
+  process-boundary surface — including a CLI — is deferred/out of scope;
+  the package ships no `bin` entry. The sketch below is preserved as the
+  design for when satellite work resumes; nothing here is built or
+  tracked.
 - **The doctrine, stated once:** the library is **Bun-only by design**
   (ratified). `bun add balaur-memory` and `import { Store }` is the whole
   in-process story — the package ships raw TypeScript (Bun consumes it
