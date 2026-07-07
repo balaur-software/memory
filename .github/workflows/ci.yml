@@ -1,5 +1,3 @@
-# Move me to .github/workflows/ci.yml (the integration lacks the Workflows
-# permission; one `git mv` after merge arms CI).
 name: ci
 
 on:
@@ -10,9 +8,15 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        bun-version: ["1.2", "latest"]
+    continue-on-error: ${{ matrix.bun-version == '1.2' }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun-version }}
       - run: bun install
       - run: bunx tsc --noEmit
       - run: bunx biome ci .

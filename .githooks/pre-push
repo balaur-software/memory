@@ -1,0 +1,6 @@
+#!/bin/sh
+# Native git hook (git config core.hooksPath .githooks) — no hook manager,
+# per the zero-dependency stance. Bypass in emergencies: git push --no-verify.
+set -e
+echo "pre-push: bun run check"
+bun run check

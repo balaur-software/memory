@@ -40,6 +40,9 @@ parameters always; mutations only through the write choke points; throw
   `bun test`
 - `bun run check` must pass before any push. Tests inject the clock; never
   sleep.
+- One-time setup: `git config core.hooksPath .githooks` — arms the native
+  pre-push hook that runs `bun run check` (no hook manager; bypass with
+  `--no-verify` only in emergencies).
 
 ## Landing changes
 
