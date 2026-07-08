@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { freshStore } from "../test/helpers.ts";
 import type { OpenDb, SqlDb } from "./storage/adapter.ts";
 import { openBunDb } from "./storage/bun.ts";
 import { Store } from "./store.ts";
@@ -10,14 +11,10 @@ import { MemoryError, type NodeId } from "./types.ts";
 
 let dir: string;
 let store: Store;
-let tick = 0;
-const T0 = Date.parse("2026-07-05T12:00:00.000Z");
-const now = () => new Date(T0 + ++tick);
+let now: () => Date;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "bm-perpetuity-"));
-  tick = 0;
-  store = Store.open({ dir, now });
+  ({ store, dir, now } = freshStore("bm-perpetuity-"));
   store.registerType({ name: "note", bornStatus: "active" });
 });
 

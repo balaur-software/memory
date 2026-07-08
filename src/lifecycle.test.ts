@@ -1,28 +1,22 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store } from "./store.ts";
+import { freshStore } from "../test/helpers.ts";
+import type { Store } from "./store.ts";
 import { MemoryError, type NodeId } from "./types.ts";
 
 let dir: string;
 let store: Store;
-let tick = 0;
-const T0 = Date.parse("2026-07-05T12:00:00.000Z");
-const now = () => new Date(T0 + ++tick);
+let dispose: () => void;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "bm-lifecycle-"));
-  tick = 0;
-  store = Store.open({ dir, now });
+  ({ store, dir, dispose } = freshStore("bm-lifecycle-"));
   store.registerType({ name: "memory", bornStatus: "proposed" });
   store.registerType({ name: "note", bornStatus: "active" });
 });
 
 afterEach(() => {
-  store.close();
-  rmSync(dir, { recursive: true, force: true });
+  dispose();
 });
 
 const activeMem = (title: string, body = "") => {

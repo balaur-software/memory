@@ -1,21 +1,17 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { freshStore } from "../test/helpers.ts";
 import { Store } from "./store.ts";
 import { type EdgeId, MemoryError } from "./types.ts";
 
 let dir: string;
 let store: Store;
-let tick = 0;
-const T0 = Date.parse("2026-07-05T12:00:00.000Z");
-const now = () => new Date(T0 + ++tick);
+let now: () => Date;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "bm-temporal-"));
-  tick = 0;
-  store = Store.open({ dir, now });
+  ({ store, dir, now } = freshStore("bm-temporal-"));
   store.registerType({ name: "person", bornStatus: "active" });
   store.registerType({ name: "org", bornStatus: "active" });
 });

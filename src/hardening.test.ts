@@ -9,22 +9,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { freshStore } from "../test/helpers.ts";
 import { Store } from "./store.ts";
 import { MemoryError } from "./types.ts";
 
 let dir: string;
 let store: Store;
-let tick = 0;
-const T0 = Date.parse("2026-07-05T12:00:00.000Z");
-const now = () => new Date(T0 + ++tick);
-const days = (n: number) => {
-  tick += n * 86_400_000;
-};
+let now: () => Date;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "bm-hardening-"));
-  tick = 0;
-  store = Store.open({ dir, now });
+  ({ store, dir, now } = freshStore("bm-hardening-"));
   store.registerType({ name: "memory", bornStatus: "proposed" });
   store.registerType({ name: "note", bornStatus: "active" });
 });

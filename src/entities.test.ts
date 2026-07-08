@@ -1,22 +1,18 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { freshStore } from "../test/helpers.ts";
 import { ulid } from "./storage/ulid.ts";
 import { Store } from "./store.ts";
 import { MemoryError, type NodeId } from "./types.ts";
 
 let dir: string;
 let store: Store;
-let tick = 0;
-const T0 = Date.parse("2026-07-05T12:00:00.000Z");
-const now = () => new Date(T0 + ++tick);
+let now: () => Date;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "bm-entities-"));
-  tick = 0;
-  store = Store.open({ dir, now });
+  ({ store, dir, now } = freshStore("bm-entities-"));
   store.registerType({ name: "person", bornStatus: "active" });
   store.registerType({ name: "note", bornStatus: "active" });
 });
@@ -109,7 +105,7 @@ describe("forget cascade, v2 amendments (I6)", () => {
     const huskId = ulid(now().getTime()) as NodeId;
     store.close();
     const db = new Database(join(dir, "memory.db"));
-    const iso = new Date(T0 + ++tick).toISOString();
+    const iso = now().toISOString();
     db.query(
       `INSERT INTO nodes (id, type, title, body, status, surfacing, importance, props, origin, author, created, updated)
        VALUES (?, 'person', 'Husk One', 'still holds content', 'merged', 'always', 0, '{}', 'o', '', ?, ?)`,
@@ -130,7 +126,7 @@ describe("survivorOf", () => {
     const id = ulid(now().getTime()) as NodeId;
     store.close();
     const db = new Database(join(dir, "memory.db"));
-    const iso = new Date(T0 + ++tick).toISOString();
+    const iso = now().toISOString();
     db.query(
       `INSERT INTO nodes (id, type, title, body, status, surfacing, importance, props, origin, author, created, updated)
        VALUES (?, 'person', ?, '', 'merged', 'always', 0, '{}', 'o', '', ?, ?)`,
@@ -158,7 +154,7 @@ describe("survivorOf", () => {
     const db = new Database(join(dir, "memory.db"));
     db.query(
       "INSERT INTO edges (id, source, target, type, context, created) VALUES (?, ?, ?, 'merged_into', '', ?)",
-    ).run(ulid(now().getTime()), a, b, new Date(T0 + ++tick).toISOString());
+    ).run(ulid(now().getTime()), a, b, now().toISOString());
     db.close();
     store = Store.open({ dir, now });
     const end = store.survivorOf(b); // returns a node, does not hang

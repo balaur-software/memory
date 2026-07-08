@@ -42,7 +42,9 @@ can reimplement):
   optional edge `type`, `context`, and `validity` window, and binds its
   Edge via `as` (so `closeEdge` can reference `@e.id`); `registerType`
   takes an optional `propsSchema`; a step with `expectError` asserts the
-  op throws.
+  op throws a `MemoryError` **and** that `MemoryError.code` equals the
+  declared value — a scenario passes only when the declared failure
+  reason is the thrown one, not merely that something was thrown.
 - `as` binds returned nodes/outcomes/reports to names later steps and
   expectations reference (`@name` / `@name.id`).
 - `expect` entries assert bound values (`bound`), ranked reads (`recall`,

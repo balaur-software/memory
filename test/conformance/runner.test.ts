@@ -11,7 +11,7 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Node, NodeId } from "../../src/index.ts";
-import { Store } from "../../src/index.ts";
+import { MemoryError, Store } from "../../src/index.ts";
 
 interface Scenario {
   name: string;
@@ -225,7 +225,18 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
           };
 
           if (step.expectError !== undefined) {
-            expect(run).toThrow();
+            let thrown: unknown;
+            try {
+              run();
+            } catch (e) {
+              thrown = e;
+            }
+            if (thrown === undefined)
+              throw new Error(`step ${step.op}: expected ${step.expectError}, nothing thrown`);
+            // Scenario codes pin MemoryError.code — the failure REASON is part of
+            // the contract, not just the failure.
+            expect(thrown).toBeInstanceOf(MemoryError);
+            expect((thrown as MemoryError).code).toBe(step.expectError as MemoryError["code"]);
           } else {
             const result = run();
             if (step.as && result) bindings.set(step.as, result as Node);
