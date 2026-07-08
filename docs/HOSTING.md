@@ -133,14 +133,28 @@ props + host-materialized instances**:
 
 ```ts
 // the rule lives on the definition node
-store.createNode({ type: "task", title: "Water the plants",
+const ruleNode = store.createNode({ type: "task", title: "Water the plants",
   props: { rrule: "FREQ=WEEKLY;BYDAY=MO" }, origin: "setup" });
 
 // on completion (or on the daily tick), the HOST mints the next instance:
 const next = store.createNode({ type: "task", title: "Water the plants",
   when: nextOccurrence(rule, now), origin: "recur:water-the-plants" });
-store.link(next.id, ruleNode.id, "instance_of");
+store.link(next.id, ruleNode.id, "instance_of");        // host vocabulary: findable via children()/edgesOf()
+store.recordDerivation(next.id, [ruleNode.id]);          // REAL lineage: wired to staleDerivations() + forget()
 ```
+
+**Lineage correction:** do **not** use `link(instance, ruleHolder,
+"derived_from")` for this — `derived_from` LOOKS like the obviously-right
+edge type (it is even listed as a library-written system edge type in
+SCHEMA.md), but `link()` only ever writes a plain `edges` row. Real
+lineage tracking — `staleDerivations()` and the `forget()` cascade's
+stale-flag sweep (I6) — reads a **separate** `derivations` table that only
+`recordDerivation()` writes. A host that used `link(..., "derived_from")`
+thinking it registered lineage gets a normal edge that silently never
+participates in either. Use `instance_of` (or your own host edge type) for
+the *findable* relationship — `children()`/`edgesOf()` traverse it — and
+`recordDerivation()` alongside it for the *tracked* one. They are not
+substitutes for each other.
 
 Birthdays are the annual case of the same move: the source of truth is
 `props.birthday` on the person; each year the host materializes one
@@ -172,6 +186,41 @@ const overdue = store.doctor().dueCandidates;                        // slipped 
 
 `propsPatch` merges (a `null` value removes a key); `props` replaces
 wholesale — reach for `props` only when you mean it.
+
+### Deadlines — the `props.due` convention
+
+`when` is one moment: a do-date or an appointment, not a deadline
+(PLANNING.md: "events happen, they aren't due"). A task that needs BOTH —
+"do Saturday, due the 15th" — carries the do-date in `when` and the
+deadline in `props.due` (a blessed convention, not a schema column): two
+parallel, independent axes on the same node.
+
+```ts
+store.createNode({ type: "task", title: "Q3 report",
+  when: "2026-07-11T00:00:00.000Z",                     // do-date: work on it Saturday
+  props: { due: "2026-07-15T00:00:00.000Z" },            // deadline: due Wednesday
+  origin: "quick-add" });
+
+const dueThisWeek     = store.deadlines(todayUtc, plus7dUtc, { type: "task" }); // window — mirrors agenda()
+const slippedDeadline = store.doctor().deadlineCandidates;                      // mirrors dueCandidates
+```
+
+`props.due` is unchecked at write time (unlike `when`'s strict-ISO
+validation, I17) — a malformed value (`"next Tuesday"`) simply never
+surfaces in `deadlines()`/`deadlineCandidates` rather than being refused.
+That is the honest, stated cost of a props convention over a schema
+column; write `due` as strict ISO-8601 UTC the same way you write `when`.
+
+### Unblocking — recovering a lost `EdgeId`
+
+`closeEdge(id)` needs the `EdgeId` `link()` returned at creation time. If
+your host didn't persist it, `edgesOf(id)` recovers it — both directions,
+`never`-endpoints excluded, `asOf` time-travels (design task-arc.md §3.2):
+
+```ts
+const blockers = store.edgesOf(task.id, { type: "blocked_by" });
+for (const e of blockers) store.closeEdge(e.id); // unblocked — the id nobody kept
+```
 
 ## 6 · Project dashboards
 
@@ -355,7 +404,68 @@ imported it** — correcting last month's figure keeps both straight; and
 
 A host's once-a-day job, in order: materialize due recurrence instances →
 `agenda(today, +1d)` for the board → `doctor()` for `dueCandidates`,
-`pendingCount`, `reviewDue`-flavored `staleCandidates`, `integrityOk` →
-render the consent queue if `pendingQueue()` is non-empty → `backup()`.
-Five calls and a loop — the library holds the life; the tick just looks
-at the clock.
+`deadlineCandidates`, `pendingCount`, `reviewDue`-flavored `staleCandidates`,
+`integrityOk` → render the consent queue if `pendingQueue()` is non-empty →
+`backup()`. Five calls and a loop — the library holds the life; the tick
+just looks at the clock. With the CLI gone (plan 002), no process invokes
+this on a schedule except the host's own script, so here it is, runnable:
+
+```ts
+// tick.ts — a host script the owner crons once a day. Five calls, in order.
+import { Database } from "bun:sqlite";
+import { Store, type Node } from "balaur-memory";
+
+const store = Store.open({ dir: process.env.MEMORY_DIR! });
+const todayUtc = new Date().toISOString().slice(0, 10);
+const plus1d = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+
+// 1. materialize due recurrence instances (§4's pattern). Finding "due"
+// rule-holders is host logic — this stub reads them via a read-only
+// connection (the §3 idiom); a real host evaluates its own rrule grammar.
+function dueRecurrences(memDir: string): { id: string; title: string }[] {
+  const db = new Database(`${memDir}/memory.db`, { readonly: true });
+  try {
+    return db
+      .query(
+        "SELECT id, title FROM nodes WHERE type = 'task' AND status = 'active' AND json_extract(props,'$.rrule') IS NOT NULL",
+      )
+      .all() as { id: string; title: string }[];
+  } finally {
+    db.close();
+  }
+}
+function materializeNext(s: Store, rule: { id: string; title: string }): void {
+  const instance = s.createNode({
+    type: "task", title: rule.title,
+    when: new Date(Date.now() + 7 * 86_400_000).toISOString(), // host rrule math goes here — yours, not the library's
+    origin: `recur:${rule.id}`,
+  });
+  s.link(instance.id, rule.id as Node["id"], "instance_of"); // findable: children()/edgesOf()
+  s.recordDerivation(instance.id, [rule.id]);                // TRACKED: staleDerivations() + forget() (§4)
+}
+function renderQueue(pending: ReturnType<Store["pendingQueue"]>): void {
+  for (const p of pending) console.log(`  pending: ${p.node.title}`);
+}
+
+for (const rule of dueRecurrences(process.env.MEMORY_DIR!)) materializeNext(store, rule);
+
+// 2. the board
+const board = store.agenda(`${todayUtc}T00:00:00.000Z`, `${plus1d}T00:00:00.000Z`);
+
+// 3. health + both deadline lenses (props.due convention alongside when_at)
+const report = store.doctor();
+console.log({
+  board: board.length,
+  overdue: report.dueCandidates.length,
+  deadlines: report.deadlineCandidates.length,
+  pending: report.pendingCount,
+});
+
+// 4. render the consent queue if non-empty
+if (store.pendingQueue().length > 0) renderQueue(store.pendingQueue());
+
+// 5. backup (§10) — BACKUP_DIR must already exist; backup() does not mkdir
+store.backup(`${process.env.BACKUP_DIR}/memory-${todayUtc}.db`);
+
+store.close();
+```

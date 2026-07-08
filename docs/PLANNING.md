@@ -150,14 +150,49 @@ any host.
 | snoozed / rescheduled | update `when` — audited, history-captured |
 | waiting on someone | edge `waiting_on` → person (the peer card shows it from both sides) |
 | blocked | edge `blocked_by` → task |
-| recurring | `props.rrule` (host grammar); on completion or tick, the HOST materializes the next instance as a new node, `derived_from` the rule-holder if lineage is wanted |
+| recurring | `props.rrule` (host grammar); on completion or tick, the HOST materializes the next instance as a new node, `recordDerivation(instance.id, [ruleHolder.id])` if lineage is wanted — **not** `link(..., "derived_from")`, which writes a plain edge that never participates in `staleDerivations()`/`forget()`'s cascade (see HOSTING.md §4) |
 
 ### Edges
 
 `part_of` (task → project), `scheduled_on` (node → day node, via
 `dayAnchor`), `waiting_on`, `blocked_by` — all host vocabulary, all
 already possible, all visible in peer cards and closable with validity
-windows where a fact ends ("was blocked by X until the 12th").
+windows where a fact ends ("was blocked by X until the 12th"). Recovering
+a `blocked_by`/`waiting_on` edge id you didn't keep: `edgesOf(id)`
+(id-gated, both directions, `never`-endpoints excluded — HOSTING.md §5).
+
+### Addendum — the `props.due` convention (deadlines, task-arc plan 018)
+
+Phase A shipped exactly one time axis, `when_at`, deliberately not named
+`due_at`: "events happen, they aren't due" (above). A task can still need
+BOTH a do-date and a deadline — "do Saturday, due the 15th" — and one axis
+cannot serve both without a false-positive overdue flag or an invisible
+do-date (the demonstrated failure this addendum answers; design
+task-arc.md §1.1). The fix is **not** a second schema column: it is a
+blessed `props.due` convention plus two small reads that give it the same
+window/candidate shape `when_at` already has:
+
+```ts
+store.createNode({ type: "task", title: "Q3 report",
+  when: "2026-07-11T00:00:00.000Z",           // do-date
+  props: { due: "2026-07-15T00:00:00.000Z" }, // deadline — a SEPARATE, parallel axis
+  origin: "quick-add" });
+
+store.deadlines(from, to, opts?)              // window read, mirrors agenda() exactly
+DoctorReport.deadlineCandidates                // standing lens, mirrors dueCandidates exactly
+```
+
+**This is a weaker guarantee than `when_at`, stated plainly:** `props.due`
+is NOT validated at write time the way `when` is (I17's `parseStrictIso`
+check does not run against undeclared props keys). A malformed value
+(`"next Tuesday"`) is not refused — it simply never surfaces in
+`deadlineCandidates`/`deadlines()`. This is the same tradeoff already
+accepted for `props.rrule`/`props.seq` (host grammar, unchecked), not a
+new one, and it is why this lives here as a hosting *convention* rather
+than as a new invariant: no schema change, no `SCHEMA_VERSION` bump, no
+I18. `agenda`/`dueCandidates` are unchanged — `when_at` and `props.due`
+are parallel, independent axes; a host composes both the same way it
+already composes `agenda(now, +7d)` + `doctor().dueCandidates`.
 
 ## What stays out (and why)
 

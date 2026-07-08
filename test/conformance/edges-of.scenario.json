@@ -1,0 +1,44 @@
+{
+  "name": "edgesOf: both directions, the closeEdge round-trip reflected, asOf time travel, never-endpoint exclusion (task-arc plan 018, design §3.2)",
+  "invariants": ["I2", "I15"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    { "op": "registerType", "name": "note", "bornStatus": "active" },
+    { "op": "dayAnchor", "as": "day0", "date": "2026-07-05" },
+    { "op": "createNode", "as": "a", "input": { "type": "note", "title": "A", "origin": "t" } },
+    { "op": "createNode", "as": "b", "input": { "type": "note", "title": "B", "origin": "t" } },
+    { "op": "createNode", "as": "c", "input": { "type": "note", "title": "C", "origin": "t" } },
+    {
+      "op": "createNode",
+      "as": "s",
+      "input": { "type": "note", "title": "Secret S", "surfacing": "never", "origin": "t" }
+    },
+    { "op": "link", "as": "eab", "source": "@a.id", "target": "@b.id", "type": "blocked_by" },
+    { "op": "link", "source": "@c.id", "target": "@a.id", "type": "waiting_on" },
+    { "op": "link", "source": "@a.id", "target": "@s.id", "type": "links" },
+    { "op": "closeEdge", "id": "@eab.id" }
+  ],
+  "expect": [
+    {
+      "edgesOf": "a",
+      "edges": [
+        { "type": "waiting_on", "source": "@c.id", "target": "@a.id" },
+        { "type": "on_day", "source": "@a.id", "target": "@day0.id" }
+      ]
+    },
+    {
+      "edgesOf": "a",
+      "asOf": "@eab.created",
+      "edges": [
+        { "type": "blocked_by", "source": "@a.id", "target": "@b.id" },
+        { "type": "waiting_on", "source": "@c.id", "target": "@a.id" },
+        { "type": "on_day", "source": "@a.id", "target": "@day0.id" }
+      ]
+    },
+    {
+      "edgesOf": "a",
+      "type": "waiting_on",
+      "edges": [{ "type": "waiting_on", "source": "@c.id", "target": "@a.id" }]
+    }
+  ]
+}

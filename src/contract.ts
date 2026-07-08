@@ -41,6 +41,13 @@ export interface DoctorReport {
   /** Active nodes whose scheduled moment has passed — oldest-due first,
    * capped, never-surfaced excluded (PLANNING.md). Reports, never acts. */
   readonly dueCandidates: readonly NodeId[];
+  /** Active nodes whose declared props.due (the blessed deadline
+   * convention — PLANNING.md's Hosting conventions addendum) has passed —
+   * oldest-due first, capped, never-surfaced excluded. A malformed
+   * props.due (not strict ISO) simply never surfaces — the documented
+   * cost of an unchecked convention (design task-arc.md §2 Option B).
+   * Reports, never acts. */
+  readonly deadlineCandidates: readonly NodeId[];
   readonly queueOldestDays: number | null;
   /** PRAGMA integrity_check on the record — the health of the FILE itself
    * (bit-rot, page corruption), distinct from content health. */
@@ -109,6 +116,13 @@ export interface StoreContract {
   /** 1-hop active set (I3, I2 on traversal), currently-valid edges by
    * default; asOf time-travels the world (TEMPORAL.md). */
   neighborhood(id: NodeId, asOf?: string): Node[];
+  /** Both-direction edges touching id — the recovery path for an `EdgeId`
+   * a host didn't persist (design task-arc.md §3.2). Id-gated like
+   * history(); currently-valid by default, asOf time-travels. Excludes
+   * edges whose OTHER endpoint is surfacing='never' (the neighborhood
+   * discovery-prevention rule); ask endpoints included; system edge types
+   * NOT filtered — closeEdge already refuses them on its own. */
+  edgesOf(id: NodeId, opts?: { type?: string; asOf?: string }): Edge[];
 
   // --- the consent boundary ---
 
@@ -138,10 +152,24 @@ export interface StoreContract {
    * nodes with when_at in [from, to), when_at ASC. An agenda pull names
    * nothing, so I2 keeps ask and never off the board. */
   agenda(from: string, to: string, opts?: { type?: string; limit?: number }): Node[];
-  /** The episodic-past window: active, always-surfaced nodes by CREATED in
+  /** The props.due window (PLANNING.md's Hosting conventions addendum):
+   * active, always-surfaced nodes with a declared props.due in [from, to),
+   * ordered by that value ASC then id ASC — mirrors agenda() exactly but
+   * reads the props.due convention instead of when_at (the two axes are
+   * parallel and independent). I2 applies: ask/never stay off the board. */
+  deadlines(from: string, to: string, opts?: { type?: string; limit?: number }): Node[];
+  /** The episodic-past window: always-surfaced nodes by CREATED in
    * [from, to) — "what happened in March". Day anchors excluded when
-   * untyped; a pure read (no side-effect day creation). */
-  episode(from: string, to: string, opts?: { type?: string; limit?: number }): Node[];
+   * untyped; a pure read (no side-effect day creation). `statuses`
+   * (default ["active"], mirrors children()) answers "of what was created
+   * in this window, what status is it in now" — episode's time axis stays
+   * CREATED, never updated (see HOSTING.md for the completion-time
+   * raw-SQL recipe). */
+  episode(
+    from: string,
+    to: string,
+    opts?: { type?: string; limit?: number; statuses?: readonly Status[] },
+  ): Node[];
   /** Get-or-create the day node for a UTC date — the public day anchor
    * (PLANNING.md). Scheduling onto it is the host's explicit link. */
   dayAnchor(date: string): Node;

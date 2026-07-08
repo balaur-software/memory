@@ -36,7 +36,7 @@ export interface Ctx {
 /** The owner-driven FSM (SCHEMA.md "Status semantics"). forgotten and merged
  * are reachable only through their dedicated verbs (forget(), decide()) —
  * never through a bare transition. */
-const TRANSITIONS: Readonly<Record<Status, readonly Status[]>> = {
+export const TRANSITIONS: Readonly<Record<Status, readonly Status[]>> = {
   proposed: ["active", "rejected"],
   active: ["archived", "quarantined"],
   archived: ["active"],
@@ -690,6 +690,39 @@ export function closeEdge(ctx: Ctx, id: EdgeId, until?: string): Edge {
   ctx.mem.run("UPDATE edges SET valid_until = ? WHERE id = ?", [at, id]);
   audit(ctx, "owner", "edge.close", id, true, {});
   return rowToEdge({ ...row, valid_until: at });
+}
+
+/**
+ * Both-direction edges touching a node (design task-arc.md §3.2): the
+ * recovery path `closeEdge` needs — a host that persisted a node and its
+ * edge but not the `EdgeId` `link()` returned can look it back up here.
+ * Id-gated like `history()` (I2's strongest naming). Currently-valid by
+ * default (mirrors `neighborhood`'s window check); `asOf` time-travels
+ * (TEMPORAL.md). Excludes edges whose OTHER endpoint is `surfacing =
+ * 'never'` — the same discovery-prevention rule `neighborhood()` already
+ * applies (leaking a never node's id via an edge IS surfacing it). `ask`
+ * endpoints ARE included (a named-`id` traversal, not ambient matching).
+ * System edge types are NOT filtered — `closeEdge` already refuses them
+ * on its own, and this read's whole purpose is recovering a lost edge id.
+ */
+export function edgesOf(ctx: Ctx, id: NodeId, opts: { type?: string; asOf?: string } = {}): Edge[] {
+  mustGet(ctx, id);
+  const t = opts.asOf !== undefined ? parseStrictIso(opts.asOf, "asOf") : ctx.now().toISOString();
+  const typeFilter = opts.type !== undefined ? "AND e.type = ?" : "";
+  const rows = ctx.mem.query<EdgeRow>(
+    `SELECT DISTINCT ${EDGE_COLS.split(", ")
+      .map((c) => `e.${c}`)
+      .join(", ")}
+     FROM edges e
+     JOIN nodes n ON n.id = (CASE WHEN e.source = ? THEN e.target ELSE e.source END)
+     WHERE (e.source = ? OR e.target = ?) AND n.surfacing != 'never'
+       ${typeFilter}
+       AND (e.valid_from IS NULL OR e.valid_from <= ?)
+       AND (e.valid_until IS NULL OR e.valid_until > ?)
+     ORDER BY e.created ASC, e.id ASC`,
+    opts.type !== undefined ? [id, id, id, opts.type, t, t] : [id, id, id, t, t],
+  );
+  return rows.map(rowToEdge);
 }
 
 // --- lifecycle primitives owned by the spine ---

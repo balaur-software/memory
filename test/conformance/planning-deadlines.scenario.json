@@ -1,0 +1,73 @@
+{
+  "name": "the deadline arc: the blessed props.due convention — deadlineCandidates + deadlines() window + malformed-due-never-surfaces (task-arc plan 018)",
+  "invariants": ["I2"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    { "op": "registerType", "name": "task", "bornStatus": "active" },
+    {
+      "op": "createNode",
+      "as": "overdueA",
+      "input": {
+        "type": "task",
+        "title": "Renew passport",
+        "props": { "due": "2026-07-01T00:00:00.000Z" },
+        "origin": "o"
+      }
+    },
+    {
+      "op": "createNode",
+      "as": "overdueB",
+      "input": {
+        "type": "task",
+        "title": "File the tax form",
+        "props": { "due": "2026-07-03T00:00:00.000Z" },
+        "origin": "o"
+      }
+    },
+    {
+      "op": "createNode",
+      "as": "future",
+      "input": {
+        "type": "task",
+        "title": "Book flights",
+        "props": { "due": "2026-09-01T00:00:00.000Z" },
+        "origin": "o"
+      }
+    },
+    {
+      "op": "createNode",
+      "as": "hidden",
+      "input": {
+        "type": "task",
+        "title": "Hidden due",
+        "props": { "due": "2026-07-02T00:00:00.000Z" },
+        "surfacing": "never",
+        "origin": "o"
+      }
+    },
+    {
+      "op": "createNode",
+      "as": "malformed",
+      "input": {
+        "type": "task",
+        "title": "Malformed due",
+        "props": { "due": "next week" },
+        "origin": "o"
+      }
+    },
+    { "op": "doctor", "as": "d1" }
+  ],
+  "expect": [
+    { "report": "d1", "path": "deadlineCandidates", "equals": ["@overdueA.id", "@overdueB.id"] },
+    { "deadlines": ["2026-07-01", "2026-07-04"], "titlesInOrder": ["Renew passport", "File the tax form"] },
+    {
+      "deadlines": ["2026-06-01", "2026-09-02"],
+      "titlesInOrder": ["Renew passport", "File the tax form", "Book flights"]
+    },
+    {
+      "deadlines": ["2026-07-01", "2026-07-04"],
+      "type": "task",
+      "titlesInOrder": ["Renew passport", "File the tax form"]
+    }
+  ]
+}

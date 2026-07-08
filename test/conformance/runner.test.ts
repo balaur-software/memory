@@ -62,9 +62,16 @@ type Expect =
       whens?: (string | null)[];
     }
   | { agenda: [string, string]; type?: string; titlesInOrder: string[] }
-  | { episode: [string, string]; type?: string; titlesInOrder: string[] }
+  | { episode: [string, string]; type?: string; statuses?: string[]; titlesInOrder: string[] }
+  | { deadlines: [string, string]; type?: string; titlesInOrder: string[] }
   | { children: string; edgeType: string; statuses?: string[]; titles: string[] }
-  | { neighborhood: string; titlesEqual: string[]; asOf?: string };
+  | { neighborhood: string; titlesEqual: string[]; asOf?: string }
+  | {
+      edgesOf: string;
+      type?: string;
+      asOf?: string;
+      edges: { type: string; source: string; target: string }[];
+    };
 
 const DIR = join(import.meta.dir);
 
@@ -74,6 +81,15 @@ function resolveRef(bindings: Map<string, Node>, ref: string): unknown {
   const node = bindings.get(name ?? "");
   if (!node) throw new Error(`unbound ref ${ref}`);
   return field ? (node as unknown as Record<string, unknown>)[field] : node;
+}
+
+/** Recursively resolves `@name`/`@name.field` refs inside a report's
+ * expected `equals` value — arrays of NodeIds (e.g. deadlineCandidates)
+ * need this the same way `sql` params already do. */
+function resolveRefsDeep(bindings: Map<string, Node>, value: unknown): unknown {
+  if (typeof value === "string" && value.startsWith("@")) return resolveRef(bindings, value);
+  if (Array.isArray(value)) return value.map((v) => resolveRefsDeep(bindings, v));
+  return value;
 }
 
 for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json"))) {
@@ -271,7 +287,7 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
               const rep = reports.get(ex.report);
               if (!rep) throw new Error(`unbound report ${ex.report}`);
               const value = rep[ex.path];
-              if (ex.equals !== undefined) expect(value).toEqual(ex.equals);
+              if (ex.equals !== undefined) expect(value).toEqual(resolveRefsDeep(bindings, ex.equals));
               if (ex.length !== undefined) expect((value as unknown[]).length).toBe(ex.length);
               if (ex.contains !== undefined) expect(value as string[]).toContain(ex.contains);
             } else if ("sqlIndex" in ex) {
@@ -336,9 +352,37 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
               expect(got).toEqual(ex.titlesInOrder);
             } else if ("episode" in ex) {
               const got = store
-                .episode(ex.episode[0], ex.episode[1], ex.type !== undefined ? { type: ex.type } : {})
+                .episode(ex.episode[0], ex.episode[1], {
+                  ...(ex.type !== undefined ? { type: ex.type } : {}),
+                  ...(ex.statuses !== undefined
+                    ? { statuses: ex.statuses as Parameters<Store["transition"]>[1][] }
+                    : {}),
+                })
                 .map((n) => n.title);
               expect(got).toEqual(ex.titlesInOrder);
+            } else if ("deadlines" in ex) {
+              const got = store
+                .deadlines(ex.deadlines[0], ex.deadlines[1], ex.type !== undefined ? { type: ex.type } : {})
+                .map((n) => n.title);
+              expect(got).toEqual(ex.titlesInOrder);
+            } else if ("edgesOf" in ex) {
+              const subject = bindings.get(ex.edgesOf);
+              if (!subject) throw new Error(`unbound ${ex.edgesOf}`);
+              const edges = store.edgesOf(subject.id, {
+                ...(ex.type !== undefined ? { type: ex.type } : {}),
+                ...(ex.asOf !== undefined ? { asOf: resolveRef(bindings, ex.asOf) as string } : {}),
+              });
+              const got = edges
+                .map((e) => ({ type: e.type, source: e.source as string, target: e.target as string }))
+                .sort((a, b) => (a.type + a.source + a.target).localeCompare(b.type + b.source + b.target));
+              const wanted = ex.edges
+                .map((e) => ({
+                  type: e.type,
+                  source: resolveRef(bindings, e.source) as string,
+                  target: resolveRef(bindings, e.target) as string,
+                }))
+                .sort((a, b) => (a.type + a.source + a.target).localeCompare(b.type + b.source + b.target));
+              expect(got).toEqual(wanted);
             } else if ("children" in ex) {
               const subject = bindings.get(ex.children);
               if (!subject) throw new Error(`unbound ${ex.children}`);

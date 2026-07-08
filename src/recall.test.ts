@@ -175,6 +175,83 @@ describe("recall: the ranking blend", () => {
   });
 });
 
+describe("deadlines: the props.due window (task-arc plan 018)", () => {
+  test("half-open window, order, type filter, limit, and I2 off the board; malformed due never surfaces", () => {
+    store.registerType({ name: "task", bornStatus: "active" });
+    const at = (title: string, due: string, type = "note") =>
+      store.createNode({ type, title, props: { due }, origin: "o" });
+    at("At from", "2026-07-06T00:00:00.000Z");
+    at("Mid week", "2026-07-08T10:00:00.000Z");
+    at("At to", "2026-07-13T00:00:00.000Z"); // exactly `to` — excluded (half-open)
+    const ask = at("Ask me", "2026-07-07T09:00:00.000Z");
+    store.setSurfacing(ask.id, "ask");
+    const never = store.createNode({
+      type: "note",
+      title: "Never me",
+      props: { due: "2026-07-07T10:00:00.000Z" },
+      surfacing: "never",
+      origin: "o",
+    });
+    const archived = at("Archived", "2026-07-09T10:00:00.000Z");
+    store.transition(archived.id, "archived");
+    const malformed = at("Malformed", "next week");
+    at("Taskish", "2026-07-10T10:00:00.000Z", "task"); // owner-born on a different type
+
+    const week = store.deadlines("2026-07-06", "2026-07-13");
+    expect(week.map((n) => n.title)).toEqual(["At from", "Mid week", "Taskish"]);
+    expect(never.props["due"]).toBe("2026-07-07T10:00:00.000Z"); // stored fine — just never surfaced
+    expect(week.map((n) => n.title)).not.toContain(malformed.title); // the documented cost of the convention
+
+    expect(store.deadlines("2026-07-06", "2026-07-13", { type: "task" }).map((n) => n.title)).toEqual([
+      "Taskish",
+    ]);
+    expect(store.deadlines("2026-07-06", "2026-07-13", { limit: 1 }).map((n) => n.title)).toEqual([
+      "At from",
+    ]);
+    expect(() => store.deadlines("2026-07-13", "2026-07-06")).toThrow("after");
+    expect(() => store.deadlines("garbage", "2026-07-13")).toThrow("ISO-8601");
+    expect(() => store.deadlines("2026-07-06", "2026-07-13", { limit: 0 })).toThrow("positive");
+  });
+
+  test("deadlines and agenda are parallel, independent axes on the same node", () => {
+    const n = store.createNode({
+      type: "note",
+      title: "Do Saturday, due the 15th",
+      when: "2026-07-11T00:00:00.000Z",
+      props: { due: "2026-07-15T00:00:00.000Z" },
+      origin: "o",
+    });
+    expect(store.agenda("2026-07-11", "2026-07-12").map((x) => x.id)).toContain(n.id);
+    expect(store.deadlines("2026-07-11", "2026-07-12").map((x) => x.id)).not.toContain(n.id); // do-week, not due-week
+    expect(store.deadlines("2026-07-15", "2026-07-16").map((x) => x.id)).toContain(n.id);
+  });
+});
+
+describe("episode: statuses option (task-arc plan 018, design §3.3)", () => {
+  test("default active-only; explicit statuses widen to non-active outcomes; validation mirrors children()", () => {
+    const archived = store.createNode({ type: "note", title: "Filed report", origin: "o" });
+    store.updateNode(archived.id, { propsPatch: { outcome: "done" } });
+    store.transition(archived.id, "archived");
+    const active = store.createNode({ type: "note", title: "Still open", origin: "o" });
+
+    const defaultWindow = store.episode("2026-07-05", "2026-07-06");
+    expect(defaultWindow.map((n) => n.title)).not.toContain("Filed report");
+    expect(defaultWindow.map((n) => n.title)).toContain("Still open");
+    expect(active.id).not.toBe(archived.id);
+
+    const widened = store.episode("2026-07-05", "2026-07-06", { statuses: ["archived"] });
+    expect(widened.map((n) => n.title)).toEqual(["Filed report"]);
+
+    const both = store.episode("2026-07-05", "2026-07-06", { statuses: ["active", "archived"] });
+    expect(both.map((n) => n.title).sort()).toEqual(["Filed report", "Still open"]);
+
+    expect(() => store.episode("2026-07-05", "2026-07-06", { statuses: [] })).toThrow("cannot be empty");
+    expect(() => store.episode("2026-07-05", "2026-07-06", { statuses: ["bogus" as never] })).toThrow(
+      "unknown status",
+    );
+  });
+});
+
 describe("recall: vector fusion (vectors in, never models)", () => {
   const model = "test-embed-v1";
   const vec = (...xs: number[]) => new Float32Array(xs);

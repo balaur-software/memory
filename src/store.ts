@@ -161,6 +161,12 @@ export class Store implements StoreContract {
     return spine.neighborhood(this.guard(), id, asOf);
   }
 
+  /** Recover an edge id a host didn't persist (design task-arc.md §3.2) —
+   * both directions, never-endpoints excluded, currently-valid by default. */
+  edgesOf(id: NodeId, opts?: { type?: string; asOf?: string }): Edge[] {
+    return spine.edgesOf(this.guard(), id, opts);
+  }
+
   // --- lifecycle primitives (Phase 1 scope) ---
 
   transition(id: NodeId, to: Status): Node {
@@ -220,8 +226,20 @@ export class Store implements StoreContract {
     return recallMod.agenda(this.guard(), from, to, opts);
   }
 
-  /** The episodic-past window — "what happened in March" (review-3 G1). */
-  episode(from: string, to: string, opts?: { type?: string; limit?: number }): Node[] {
+  /** The props.due window — mirrors agenda() but reads the blessed
+   * deadline convention (PLANNING.md's Hosting conventions addendum). */
+  deadlines(from: string, to: string, opts?: { type?: string; limit?: number }): Node[] {
+    return recallMod.deadlines(this.guard(), from, to, opts);
+  }
+
+  /** The episodic-past window — "what happened in March" (review-3 G1).
+   * `statuses` (design task-arc.md §3.3) widens beyond active; the time
+   * axis stays CREATED, never updated. */
+  episode(
+    from: string,
+    to: string,
+    opts?: { type?: string; limit?: number; statuses?: readonly Status[] },
+  ): Node[] {
     return recallMod.episode(this.guard(), from, to, opts);
   }
 

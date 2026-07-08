@@ -100,6 +100,76 @@ describe("doctor: candidates — review lists, never actions", () => {
   });
 });
 
+describe("doctor: deadlineCandidates — the blessed props.due convention (task-arc plan 018)", () => {
+  test("past props.due surfaces oldest-first, capped; never/archived/future/malformed excluded", () => {
+    const overdueB = store.createNode({
+      type: "note",
+      title: "B",
+      props: { due: "2026-07-03T00:00:00.000Z" },
+      origin: "o",
+    });
+    const overdueA = store.createNode({
+      type: "note",
+      title: "A",
+      props: { due: "2026-07-01T00:00:00.000Z" },
+      origin: "o",
+    });
+    store.createNode({
+      type: "note",
+      title: "Future",
+      props: { due: "2026-09-01T00:00:00.000Z" },
+      origin: "o",
+    });
+    const hidden = store.createNode({
+      type: "note",
+      title: "Hidden due",
+      props: { due: "2026-07-02T00:00:00.000Z" },
+      surfacing: "never",
+      origin: "o",
+    });
+    const done = store.createNode({
+      type: "note",
+      title: "Done",
+      props: { due: "2026-07-02T00:00:00.000Z" },
+      origin: "o",
+    });
+    store.transition(done.id, "archived");
+    const malformed = store.createNode({
+      type: "note",
+      title: "Malformed due",
+      props: { due: "next week" },
+      origin: "o",
+    });
+
+    const due = store.doctor().deadlineCandidates;
+    expect(due).toEqual([overdueA.id, overdueB.id]); // oldest-due first
+    expect(due).not.toContain(hidden.id);
+    expect(due).not.toContain(malformed.id); // the documented cost of the convention
+
+    for (let i = 0; i < 25; i++)
+      store.createNode({
+        type: "note",
+        title: `O${i}`,
+        props: { due: "2026-06-01T00:00:00.000Z" },
+        origin: "o",
+      });
+    expect(store.doctor().deadlineCandidates).toHaveLength(20); // the lens cap
+  });
+
+  test("deadlineCandidates and dueCandidates are parallel, independent axes on the same node", () => {
+    const both = store.createNode({
+      type: "note",
+      title: "Do Saturday, due the 15th",
+      when: "2026-07-09T00:00:00.000Z", // the do-date: not yet passed
+      props: { due: "2026-07-01T00:00:00.000Z" }, // the deadline: already passed
+      origin: "o",
+    });
+    const r = store.doctor();
+    expect(r.dueCandidates).not.toContain(both.id); // when_at hasn't passed
+    expect(r.deadlineCandidates).toContain(both.id); // props.due has
+  });
+});
+
 describe("doctor: the announced revision — pendingByKind, historyRows, reproposedAfterForget30d", () => {
   test("pendingByKind breaks pendingCount down by proposal / edit / identity", () => {
     store.propose({ type: "memory", title: "Awaiting verdict", body: "", origin: "t" });

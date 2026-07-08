@@ -20,7 +20,7 @@
 
 import type { RankingConfig, RecallOptions } from "./contract.ts";
 import { allVectors, cosine } from "./indexdb/vectors.ts";
-import type { Ctx } from "./spine.ts";
+import { type Ctx, TRANSITIONS } from "./spine.ts";
 import type { Node, NodeId, Status, Surfacing } from "./types.ts";
 import { MemoryError, parseProps, parseStrictIso } from "./types.ts";
 
@@ -289,18 +289,22 @@ export function search(ctx: Ctx, terms: readonly string[], limit = 10): Node[] {
 const DEFAULT_AGENDA_LIMIT = 100;
 
 /**
- * The episodic-past window (review-3 G1): active, always-surfaced nodes by
- * CREATED in [from, to) — what recall is to text and agenda is to the
- * scheduled future, episode is to the lived past ("what happened in
- * March"). Day anchors are excluded when untyped (plumbing; an explicit
- * type:"day" reaches them — the recall convention). A pure read: no
- * side-effect day creation, ever.
+ * The episodic-past window (review-3 G1): always-surfaced nodes by CREATED
+ * in [from, to) — what recall is to text and agenda is to the scheduled
+ * future, episode is to the lived past ("what happened in March"). Day
+ * anchors are excluded when untyped (plumbing; an explicit type:"day"
+ * reaches them — the recall convention). A pure read: no side-effect day
+ * creation, ever. `statuses` (design task-arc.md §3.3, mirrors children()'s
+ * option verbatim, default ["active"]) answers "of what was CREATED in this
+ * window, what status is it in now" — a real but different question from
+ * "what was completed in this window" (episode's time axis stays created,
+ * never updated; see HOSTING.md for the completion-time raw-SQL recipe).
  */
 export function episode(
   ctx: Ctx,
   from: string,
   to: string,
-  opts: { type?: string; limit?: number } = {},
+  opts: { type?: string; limit?: number; statuses?: readonly Status[] } = {},
 ): Node[] {
   const lo = parseStrictIso(from, "from");
   const hi = parseStrictIso(to, "to");
@@ -308,16 +312,23 @@ export function episode(
   const limit = opts.limit ?? DEFAULT_AGENDA_LIMIT;
   if (!Number.isInteger(limit) || limit < 1)
     throw new MemoryError("props_invalid", "limit must be a positive integer");
+  const statuses = opts.statuses ?? (["active"] as const);
+  if (statuses.length === 0) throw new MemoryError("props_invalid", "statuses cannot be empty");
+  const validStatuses = new Set<string>(Object.keys(TRANSITIONS));
+  for (const s of statuses) {
+    if (!validStatuses.has(s)) throw new MemoryError("props_invalid", `unknown status ${JSON.stringify(s)}`);
+  }
   const typed = opts.type !== undefined;
+  const placeholders = statuses.map(() => "?").join(", ");
   const rows = ctx.mem.query<RowShape & Record<string, string | number | null>>(
     `SELECT id, type, title, body, status, surfacing, importance, props, origin, author,
             use_count, last_used, review_at, when_at, created, updated
      FROM nodes
      WHERE created >= ? AND created < ?
-       AND status = 'active' AND surfacing = 'always'
+       AND status IN (${placeholders}) AND surfacing = 'always'
        ${typed ? "AND type = ?" : "AND type != 'day'"}
      ORDER BY created ASC, id ASC LIMIT ?`,
-    typed ? [lo, hi, opts.type as string, limit] : [lo, hi, limit],
+    typed ? [lo, hi, ...statuses, opts.type as string, limit] : [lo, hi, ...statuses, limit],
   );
   return rows.map(rowShapeToNode);
 }
@@ -352,6 +363,44 @@ export function agenda(
        AND status = 'active' AND surfacing = 'always'
        ${typed ? "AND type = ?" : ""}
      ORDER BY when_at ASC, id ASC LIMIT ?`,
+    typed ? [lo, hi, opts.type as string, limit] : [lo, hi, limit],
+  );
+  return rows.map(rowShapeToNode);
+}
+
+/**
+ * The props.due window (PLANNING.md's Hosting conventions addendum, design
+ * task-arc.md §3.1): active, always-surfaced nodes with a declared
+ * props.due in [from, to), ordered by that value ASC then id ASC. Mirrors
+ * agenda() body-for-body but reads the blessed props.due convention
+ * instead of when_at — the two axes are parallel and independent (a node
+ * may carry both a do-date in `when` and a deadline in `props.due`). Same
+ * I2 rule as agenda: an ambient pull names nothing, so `ask`/`never` stay
+ * off the board. A malformed props.due (not strict ISO) simply never
+ * surfaces here — the documented, honest cost of an unchecked convention.
+ */
+export function deadlines(
+  ctx: Ctx,
+  from: string,
+  to: string,
+  opts: { type?: string; limit?: number } = {},
+): Node[] {
+  const lo = parseStrictIso(from, "from");
+  const hi = parseStrictIso(to, "to");
+  if (hi <= lo) throw new MemoryError("props_invalid", "to must be after from");
+  const limit = opts.limit ?? DEFAULT_AGENDA_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1)
+    throw new MemoryError("props_invalid", "limit must be a positive integer");
+  const typed = opts.type !== undefined;
+  const rows = ctx.mem.query<RowShape & Record<string, string | number | null>>(
+    `SELECT id, type, title, body, status, surfacing, importance, props, origin, author,
+            use_count, last_used, review_at, when_at, created, updated
+     FROM nodes
+     WHERE json_extract(props, '$.due') IS NOT NULL
+       AND json_extract(props, '$.due') >= ? AND json_extract(props, '$.due') < ?
+       AND status = 'active' AND surfacing = 'always'
+       ${typed ? "AND type = ?" : ""}
+     ORDER BY json_extract(props, '$.due') ASC, id ASC LIMIT ?`,
     typed ? [lo, hi, opts.type as string, limit] : [lo, hi, limit],
   );
   return rows.map(rowShapeToNode);
