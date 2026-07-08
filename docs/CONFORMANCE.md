@@ -105,9 +105,11 @@ Sixteen of seventeen invariants are scenario-pinned. The remaining one:
 
 Every invariant with a possible producer has one.
 
-The `doctor()` report is covered by unit tests (`src/doctor.test.ts`)
-rather than scenarios — it reads state and never mutates, so there is no
-invariant to pin, only math and wording to keep honest.
+The `doctor()` report is covered by both unit tests (`src/doctor.test.ts`)
+and scenarios — `doctor-revision` exercises the `doctor` op directly, and
+`planning-deadlines` asserts `deadlineCandidates` through it. It reads
+state and never mutates, so there is no invariant to pin on it alone,
+only math and wording to keep honest.
 
 ## Rules
 

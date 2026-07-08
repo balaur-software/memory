@@ -400,6 +400,202 @@ imported it** — correcting last month's figure keeps both straight; and
 **assets you sold get an `owns` edge with `valid_until`** (§8 / I15) so
 `neighborhood(asOf)` reconstructs what you held on any past date.
 
+**Rebuying a sold asset does not reopen the old edge.** A closed
+`(source, target, type)` triple stays closed — `link` refuses to
+re-open it; this is a deliberate deferral, not a bug ("Re-opening a
+closed triple," `docs/TEMPORAL.md:239-244`: "closing + relinking already
+preserves every state... multi-interval validity... is deferred,
+stated"). If the owner re-acquires the same asset (or returns to a
+former employer), the sanctioned interim pattern is to reify the stint
+as its own node — the same row-per-fact shape this section already uses
+for holdings — e.g. an `ownership` node with `when` = the reacquisition
+date, linked to both parties with plain edge types. A fresh node id
+every time means no `(source, target, type)` triple ever repeats, so the
+UNIQUE constraint never engages.
+
+## 12 · Long-form documents (journals, essays, life notes)
+
+A document is a node like any other: `title` is the short, greppable
+label (recommend: the doc's own H1 text, extracted by the host at
+capture time — the library never infers content from content, I17's
+spirit, but a host reading its own input and pulling a heading is the
+host's own choice, same as rrule-parsing in §4); `body` is the *raw
+markdown, in full* — round-tripping the whole document back out
+losslessly matters more than deduplicating the title line.
+`props.format: "markdown"` is a convention flag (unenforced — `body` is
+opaque TEXT regardless) that tells a host renderer which way to
+interpret the bytes.
+
+```ts
+store.registerType({ name: "document", bornStatus: "active" });
+
+const note = store.createNode({
+  type: "document",
+  title: "Lisbon trip — what I'd do differently",   // the doc's own H1
+  body: fullMarkdownText,                             // includes the H1
+  props: { format: "markdown" },
+  surfacing: "ask",            // journals are ask/never material (§7, §11)
+  origin: `journal:${sessionId}`,
+});
+```
+
+**Surfacing default: `ask`.** Long-form personal writing is exactly the
+holdings-pattern case (§11) — content the owner wants *findable by name
+or term*, not ambient. `always` remains available per-node for documents
+a host wants proactively surfaced (a running project brief); `never` if
+even a named search must stay silent (then `children`/`recall` skip it
+too — retrieve by id only).
+
+**History cost — measured, not guessed.** `memory_history` stores a
+full, undiffed snapshot of `title`/`body`/`props` on every
+owner-authority edit (I16) — for a document type that means storage
+grows `O(edits × body size)`, unbounded. A probe against this library:
+one 205.6 KB note, edited repeatedly, each edit appending one line:
+
+| edits | `memory_history` rows | `memory.db`+WAL | × single-body size |
+|---:|---:|---:|---:|
+| 0 (create only) | 0 | 458.7 KB | 2.2× |
+| 1 | 1 | 1,102.4 KB | 5.4× |
+| 10 | 10 | 3,222.8 KB | 15.7× |
+| 30 | 30 | 10,740.7 KB | 52.3× |
+| 50 | 50 | 14,464.8 KB | 70.4× |
+
+50 edits of one 206 KB document costs ~14 MB, for one node. This is
+architectural (I16's "exactly three owner-authority capture moments"
+snapshotting the full record, not a diff), not a bug — but it means the
+edit-vs-revise split (§8) matters more for documents than for anything
+else in this guide.
+
+**Editing vs. revising — reuse the §8 split.** A typo fix or a
+paragraph tightened is a wording change: `updateNode({ body })` in
+place, and `history()` replays it — appropriate for occasional small
+edits (a handful of edits on a personal note costs kilobytes, not
+megabytes). A substantial rewrite (a new draft of a whole essay, a
+journal entry rewritten after further thought) is closer to "the fact
+itself changed" (§8): **create a new node**, link it to the old one with
+a host edge (e.g. `revises`), and `transition(old.id, "archived")`.
+This keeps `memory_history`'s per-edit full-copy cost bounded to the
+*wording-tweak* case it was designed for, while the *rewrite* case pays
+for exactly one new body, not an accumulating snapshot chain. If a
+store's `doctor().historyRows` climbs because one document type
+dominates it, that is the owner's signal to revisit — the library
+reports, it does not act (`docs/TEMPORAL.md:248-250`).
+
+```ts
+const v2 = store.createNode({
+  type: "document", title: "Lisbon trip — what I'd do differently (v2)",
+  body: rewrittenMarkdownText, props: { format: "markdown" },
+  surfacing: "ask", origin: `journal:${sessionId}`,
+});
+store.link(v2.id, note.id, "revises");
+store.transition(note.id, "archived");
+```
+
+**Recall shape for very long documents (optional).** Plain full-body
+FTS still finds a long document by any distinctive phrase — bm25's
+length normalization means a long document can rank behind a short note
+sharing the same term, but the document is still returned, well inside
+`recall`'s default limit. Fine for personal notes nobody else's content
+competes with in a given query. For documents the owner actually wants
+findable *by sub-topic* (a long reference doc, a multi-section life
+plan), bless the same shape §6 already uses for projects: **one node
+per `##` section**, `part_of` → the document node, `props.seq` for
+order.
+
+```ts
+const doc = store.createNode({ type: "document", title: "Estate planning notes", body: fullMarkdownText, props: { format: "markdown" }, origin: "setup" });
+for (const section of splitByH2(fullMarkdownText)) {
+  const s = store.createNode({
+    type: "document_section", title: section.heading, body: section.body,
+    props: { seq: section.index }, surfacing: "ask", origin: doc.origin,
+  });
+  store.link(s.id, doc.id, "part_of");
+}
+```
+
+This is opt-in per document, not a blanket recommendation — most
+personal notes are short enough that full-body indexing is exactly
+right, and splitting adds bookkeeping (`children(doc.id, "part_of")` +
+client sort) a host should only pay for when the size or "find that one
+section" complaint actually shows up.
+
+## 13 · Tables (CSV / spreadsheet-shaped life data)
+
+Generalizes §11's holdings pattern beyond money: **one type per sheet,
+one node per row, props = columns** (typed via `propsSchema` where the
+columns are genuinely `string`/`number`/`boolean` — the common case),
+and every row `part_of` → one collection node representing the imported
+table/sheet. Corrections are append-only, exactly like holdings: never
+mutate a historical row's figures in place — add a new row (or a
+`supersedes`-style host convention if a row needs replacing) so "what
+did the June statement say" stays answerable.
+
+```ts
+store.registerType({ name: "table",   bornStatus: "active" });
+store.registerType({
+  name: "expense", bornStatus: "active",
+  propsSchema: { amount_minor: { type: "number", required: true },
+                 currency:     { type: "string",  required: true },
+                 category:     { type: "string",  required: true } },
+});
+
+const sheet = store.createNode({
+  type: "table", title: "Bank export — June 2026",
+  props: { source: "bank-csv-2026-06.csv", rowCount: rows.length },
+  origin: "import:bank-csv-2026-06.csv",
+});
+
+for (const row of rows) {
+  const r = store.createNode({
+    type: "expense", title: row.description,
+    props: { amount_minor: row.amountMinor, currency: "EUR", category: row.category },
+    when: row.date,                       // the transaction's own moment
+    origin: "import:bank-csv-2026-06.csv",
+  });
+  store.link(r.id, sheet.id, "part_of");
+}
+```
+
+**Where it breaks:**
+
+- **Wide sheets** (dozens of columns): `propsSchema` scales fine (it's
+  free-form JSON, no column-count cost) but a `props_invalid` schema
+  error only names one bad key at a time — a wide, dirty CSV import
+  means many one-at-a-time failures. Host recipe: validate/normalize
+  each row BEFORE calling `createNode` (a plain JS check against your
+  own column list), not after.
+- **>10k rows**: `createNode` per row keeps working — measured at
+  0.287 ms/row for a 2,000-row import (574 ms total, linear, ~3 s
+  projected at 10k rows) — but the **`episode()` pollution is the real
+  ceiling, not create latency**. The same 2,000-row import measured a
+  `memory.db`+WAL growth of 6,102.6 KB (~3,125 bytes/row — mostly audit
+  and `on_day`-edge overhead, since these rows carry empty bodies).
+  Immediately after that import, a same-day `journal` entry created
+  right after (the 2,002nd node of the day) **did not appear** in a
+  default-limit (`DEFAULT_AGENDA_LIMIT = 100`) `episode()` call for that
+  day at all — buried behind 2,000 import rows in `created ASC` order.
+  A **typed** call, `episode(from, to, { type: 'expense', limit:
+  10000 })`, correctly returned all 2,000 rows in 4.57 ms. This is a
+  known, accepted gap for v1, not a silently-solved one: **always call
+  `episode()`/`agenda()` typed** (`{ type: 'expense' }`) once a table has
+  been imported — the mitigation is real and available today with zero
+  library change, but `episode()`'s untyped default on a bulk-import day
+  will still surprise a host that forgets to type its query.
+- **Retrieval at scale**: `children(sheet.id, "part_of")` has no
+  query-side cap — it returns everything currently active/valid. For
+  >10k rows, aggregate over the read-only file with hand-written SQL
+  instead (§3's rule — analytics never goes through the writer), the
+  same move §11's net-worth query already makes.
+- **Actual spreadsheet files (.xlsx) stay out of scope.** The store
+  holds declared, row-shaped data (above), never an opaque binary blob —
+  `nodes.body` is `TEXT`, and an `.xlsx` blob in a column would violate
+  the library's "no opaque state: both files open in any SQLite tool"
+  non-goal outright (nobody can `SELECT` their way to meaning inside a
+  zipped-XML blob). If a host wants to record that a set of row-nodes
+  was derived from a re-parseable source file, `origin` names the file
+  (as above) and `recordDerivation()` (§4) records re-derivable lineage
+  if the source changes — no schema or library change needed.
+
 ## The daily tick (putting it together)
 
 A host's once-a-day job, in order: materialize due recurrence instances →

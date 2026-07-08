@@ -192,7 +192,7 @@ can be stale between writes (I13).
 | `supersedes` | new → old | library (Decide) | validity chain; old is archived |
 | `merged_into` | duplicate → survivor | library | entity-resolution outcome |
 | `no_match` | a ↔ b | library (Decide) | owner ruled distinct — never re-propose (I9) |
-| `derived_from` | artifact → source | library (recordDerivation) | lineage; cascade root |
+| `derived_from` | artifact → source | *(reserved — nothing writes it)* | timeless system-type name only (I15); real lineage lives in the separate `derivations` table, written by `recordDerivation()`, not this edge type — see HOSTING.md §4 |
 
 Day anchors are keyed by the **UTC calendar day** (I11 — the library is
 UTC-only). A host whose owner lives east of UTC should know a late-night
