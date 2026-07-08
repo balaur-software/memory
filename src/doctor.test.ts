@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -96,5 +97,67 @@ describe("doctor: candidates — review lists, never actions", () => {
     days(14);
     store.propose({ type: "memory", title: "Fresh proposal", body: "", origin: "t" });
     expect(store.doctor().queueOldestDays).toBe(14);
+  });
+});
+
+describe("doctor: the announced revision — pendingByKind, historyRows, reproposedAfterForget30d", () => {
+  test("pendingByKind breaks pendingCount down by proposal / edit / identity", () => {
+    store.propose({ type: "memory", title: "Awaiting verdict", body: "", origin: "t" });
+    const editable = activeMem("Editable target");
+    store.proposeEdit(editable.id, { fields: { body: "new" }, origin: "t" });
+    activeMem("Identity twin");
+    store.createNode({ type: "memory", title: "identity TWIN", origin: "owner" });
+    store.suggestIdentities("memory");
+
+    const r = store.doctor();
+    expect(r.pendingByKind).toEqual({ proposals: 1, edits: 1, identities: 1 });
+    expect(r.pendingByKind.proposals + r.pendingByKind.edits + r.pendingByKind.identities).toBe(
+      r.pendingCount,
+    );
+  });
+
+  test("historyRows counts memory_history snapshots after edits", () => {
+    const node = store.createNode({ type: "note", title: "Tracked", body: "v1", origin: "owner" });
+    expect(store.doctor().historyRows).toBe(0);
+    store.updateNode(node.id, { body: "v2" });
+    store.updateNode(node.id, { body: "v3" });
+    expect(store.doctor().historyRows).toBe(2);
+  });
+
+  test("reproposedAfterForget30d: salted-hash match, unrelated titles excluded, window-bound", () => {
+    const node = activeMem("Allergy note");
+    store.forget(node.id);
+
+    // An unrelated proposal must never be mistaken for a reproposal.
+    store.propose({ type: "memory", title: "Completely different", body: "", origin: "t" });
+    expect(store.doctor().reproposedAfterForget30d).toBe(0);
+
+    // Same title, different case/whitespace — normalization must still match.
+    store.propose({ type: "memory", title: "  ALLERGY   note ", body: "", origin: "t" });
+    expect(store.doctor().reproposedAfterForget30d).toBe(1);
+
+    // Advance past the 30-day window: the earlier matching propose row falls
+    // out, but a FRESH matching propose inside the new window still counts —
+    // only in-window proposals count.
+    days(31);
+    store.propose({ type: "memory", title: "allergy note", body: "", origin: "t" });
+    expect(store.doctor().reproposedAfterForget30d).toBe(1);
+  });
+
+  test("the reproposal signal stays content-free — no audit_log meta ever carries the title", () => {
+    const S = "XSENTINELX";
+    const node = activeMem(`${S} allergy note`);
+    store.forget(node.id);
+    store.propose({ type: "memory", title: `${S} allergy note`, body: "", origin: "t" });
+    expect(store.doctor().reproposedAfterForget30d).toBe(1);
+    store.close();
+
+    const db = new Database(join(dir, "memory.db"), { readonly: true });
+    const hits = db
+      .query("SELECT COUNT(*) AS c FROM audit_log WHERE meta LIKE ? OR ref LIKE ? OR action LIKE ?")
+      .get(`%${S}%`, `%${S}%`, `%${S}%`) as { c: number };
+    db.close();
+    expect(hits.c).toBe(0);
+    store = Store.open({ dir, now }); // afterEach symmetry
   });
 });

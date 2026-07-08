@@ -9,7 +9,7 @@ import { deleteFts } from "./indexdb/fts.ts";
 import { deleteVectorsFor } from "./indexdb/vectors.ts";
 import { flagStaleBySource } from "./lineage.ts";
 import { lexicalCandidates, termsFromText } from "./recall.ts";
-import { audit, type Ctx, mustGet } from "./spine.ts";
+import { audit, type Ctx, mustGet, titleFootprint } from "./spine.ts";
 import { MemoryError, type NodeId, parseStrictIso } from "./types.ts";
 
 /**
@@ -74,6 +74,9 @@ export function forget(ctx: Ctx, id: NodeId): ForgetReport {
 
   // Best-effort mention candidates — computed BEFORE the title is destroyed.
   const needsOwner: string[] = [];
+  // The doctor's reproposal-after-forget signal (FIELD.md) — a salted hash
+  // of the title, captured before the cascade destroys it.
+  const tf = titleFootprint(ctx, node.title);
   const terms = termsFromText(node.title);
   if (terms.length > 0) {
     for (const c of lexicalCandidates(ctx, terms, undefined, 5)) {
@@ -113,6 +116,7 @@ export function forget(ctx: Ctx, id: NodeId): ForgetReport {
       edgesDropped,
       flaggedStale: flaggedStale.length,
       mentionCandidates: needsOwner.length - 1,
+      tf,
     });
   });
 

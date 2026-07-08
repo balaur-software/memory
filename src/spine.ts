@@ -69,6 +69,19 @@ export function audit(
   ]);
 }
 
+/** A keyed, irreversible title footprint for the doctor's reproposal
+ * metric (FIELD.md): sha256(store_id + "\n" + normalizeText(title)),
+ * first 16 hex chars. Content-free by construction — reversing it
+ * requires the store file, and possession of the file reveals everything
+ * anyway. Bun.CryptoHasher is a runtime API, not bun:sqlite — ADR-0001's
+ * containment (one sqlite import site) is untouched. */
+export function titleFootprint(ctx: Ctx, title: string): string {
+  const sid = ctx.mem.get<{ value: string }>("SELECT value FROM meta WHERE key = 'store_id'")?.value ?? "";
+  const h = new Bun.CryptoHasher("sha256");
+  h.update(`${sid}\n${normalizeText(title)}`);
+  return (h.digest("hex") as string).slice(0, 16);
+}
+
 // --- row mapping (the one sanctioned brand/JSON boundary) ---
 
 interface NodeRow extends SqlRow {

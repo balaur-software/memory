@@ -1,0 +1,71 @@
+{
+  "name": "Doctor revision: pendingByKind, historyRows, reproposedAfterForget30d — content-free, reports never acts",
+  "invariants": ["I7", "I12"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    { "op": "registerType", "name": "memory", "bornStatus": "proposed" },
+    { "op": "registerType", "name": "note", "bornStatus": "active" },
+
+    {
+      "op": "propose",
+      "as": "pending1",
+      "proposal": { "type": "memory", "title": "Queued proposal", "body": "", "origin": "t1" }
+    },
+
+    {
+      "op": "propose",
+      "as": "editProposal",
+      "proposal": { "type": "memory", "title": "Editable subject", "body": "", "origin": "t2" }
+    },
+    { "op": "decide", "as": "editActive", "id": "@editProposal.id", "decision": { "kind": "approve" } },
+    { "op": "proposeEdit", "id": "@editActive.id", "change": { "fields": { "body": "v2" }, "origin": "t3" } },
+
+    {
+      "op": "propose",
+      "as": "twinAProp",
+      "proposal": { "type": "memory", "title": "Twin subject", "body": "", "origin": "t4" }
+    },
+    { "op": "decide", "as": "twinA", "id": "@twinAProp.id", "decision": { "kind": "approve" } },
+    {
+      "op": "createNode",
+      "as": "twinB",
+      "input": { "type": "memory", "title": "twin SUBJECT", "origin": "owner" }
+    },
+    { "op": "suggestIdentities", "type": "memory", "as": "s1" },
+
+    {
+      "op": "createNode",
+      "as": "tracked",
+      "input": { "type": "note", "title": "Tracked", "body": "v1", "origin": "owner" }
+    },
+    { "op": "updateNode", "id": "@tracked.id", "patch": { "body": "v2" } },
+    { "op": "updateNode", "id": "@tracked.id", "patch": { "body": "v3" } },
+
+    {
+      "op": "propose",
+      "as": "forgottenProp",
+      "proposal": { "type": "memory", "title": "Allergy note", "body": "", "origin": "t5" }
+    },
+    { "op": "decide", "as": "forgottenActive", "id": "@forgottenProp.id", "decision": { "kind": "approve" } },
+    { "op": "forget", "id": "@forgottenActive.id" },
+    {
+      "op": "propose",
+      "as": "reproposeNode",
+      "proposal": { "type": "memory", "title": "  ALLERGY   note ", "body": "", "origin": "t6" }
+    },
+    { "op": "decide", "id": "@reproposeNode.id", "decision": { "kind": "reject" } },
+
+    { "op": "doctor", "as": "d1" }
+  ],
+  "expect": [
+    { "outcome": "s1", "equals": "1" },
+    { "report": "d1", "path": "pendingByKind", "equals": { "proposals": 1, "edits": 1, "identities": 1 } },
+    { "report": "d1", "path": "pendingCount", "equals": 3 },
+    { "report": "d1", "path": "historyRows", "equals": 2 },
+    { "report": "d1", "path": "reproposedAfterForget30d", "equals": 1 },
+    {
+      "sql": "SELECT COUNT(*) FROM audit_log WHERE meta LIKE '%allergy%' OR meta LIKE '%Allergy%'",
+      "equals": 0
+    }
+  ]
+}

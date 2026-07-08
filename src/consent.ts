@@ -24,6 +24,7 @@ import {
   mustGet,
   reindexNode,
   snapshotHistory,
+  titleFootprint,
   transition,
   typeRow,
 } from "./spine.ts";
@@ -184,7 +185,11 @@ export function propose(ctx: Ctx, p: Proposal): Outcome {
       ],
     );
     const node = mustGet(ctx, pending.id);
-    audit(ctx, "agent", "consent.propose", node.id, true, { outcome: "merged_pending", type: p.type });
+    audit(ctx, "agent", "consent.propose", node.id, true, {
+      outcome: "merged_pending",
+      type: p.type,
+      tf: titleFootprint(ctx, title),
+    });
     return { kind: "merged_pending", node };
   }
 
@@ -194,7 +199,11 @@ export function propose(ctx: Ctx, p: Proposal): Outcome {
   // doctor.duplicateCandidates carry the resolution (review #2).
   const active = findByNormalizedTitle(ctx, p.type, title, "active", "named");
   if (active !== null) {
-    audit(ctx, "agent", "consent.propose", active.id, true, { outcome: "exists_active", type: p.type });
+    audit(ctx, "agent", "consent.propose", active.id, true, {
+      outcome: "exists_active",
+      type: p.type,
+      tf: titleFootprint(ctx, title),
+    });
     return { kind: "exists_active", node: active };
   }
 
@@ -214,7 +223,11 @@ export function propose(ctx: Ctx, p: Proposal): Outcome {
     "proposed",
     "agent",
   );
-  audit(ctx, "agent", "consent.propose", node.id, true, { outcome: "created", type: p.type });
+  audit(ctx, "agent", "consent.propose", node.id, true, {
+    outcome: "created",
+    type: p.type,
+    tf: titleFootprint(ctx, title),
+  });
   return { kind: "created", node };
 }
 

@@ -248,6 +248,7 @@ downstream derivations have moved on); the owner restores deliberately via
 - **Retention policies / history caps** — unbounded at personal scale;
   if a store measures a problem, the doctor reports it first (a future
   `historyRows` metric), and the owner decides. Reports, never acts.
+  (delivered — DoctorReport.historyRows)
 - **Undo** — see above; read-only evidence in v1.
 
 ## Phases

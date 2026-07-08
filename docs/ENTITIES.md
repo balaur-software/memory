@@ -210,6 +210,7 @@ Semantics, precisely:
   organized — the spine already agrees.
 - **Doctor fields for the identity queue** — deferred to avoid a second
   breaking change; revisit with the next DoctorReport revision.
+  (delivered — see DoctorReport.pendingByKind)
 
 ## Phases
 

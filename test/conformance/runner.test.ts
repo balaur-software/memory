@@ -203,6 +203,11 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".scenario.json")))
                 if (step.as) reports.set(step.as, rep as unknown as Record<string, unknown>);
                 return undefined;
               }
+              case "doctor": {
+                const rep = store.doctor();
+                if (step.as) reports.set(step.as, rep as unknown as Record<string, unknown>);
+                return undefined;
+              }
               case "recordDerivation":
                 store.recordDerivation(
                   step["artifact"] as string,

@@ -45,6 +45,17 @@ export interface DoctorReport {
   /** PRAGMA integrity_check on the record — the health of the FILE itself
    * (bit-rot, page corruption), distinct from content health. */
   readonly integrityOk: boolean;
+  /** The queue by kind — proposals awaiting a verdict, parked edits,
+   * identity questions (ENTITIES.md's deferred fields, delivered). */
+  readonly pendingByKind: { readonly proposals: number; readonly edits: number; readonly identities: number };
+  /** Total memory_history rows — the retention instrument TEMPORAL.md
+   * names; visibility first, policy is the owner's. */
+  readonly historyRows: number;
+  /** Proposals in the last 30 days whose normalized title matches a fact
+   * the owner forgot (matched by salted hash in the audit ledger — never
+   * by stored text). The sanctioned residue of the rejected improve()
+   * (FIELD.md). Reports, never acts. */
+  readonly reproposedAfterForget30d: number;
 }
 
 /** The draft contract. Phase 1 ships `class Store implements StoreContract`. */

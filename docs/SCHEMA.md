@@ -107,6 +107,13 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_audit_at ON audit_log(at);
 ```
 
+`meta.tf`, where present (`forget.cascade` and every `consent.propose` outcome),
+is a keyed, irreversible title footprint — the first 16 hex chars of
+sha256(store_id + normalized title) — never the title itself. It exists
+solely to let the doctor detect a reproposed forgotten fact
+(`DoctorReport.reproposedAfterForget30d`); reversing it requires the store
+file, and possession of the file already reveals everything.
+
 ### Version 2 — identity resolution (docs/ENTITIES.md)
 
 ```sql
