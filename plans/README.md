@@ -40,12 +40,32 @@ code.
 | 016 | SPIKE: export/portability + restore (library verbs) | P3 | M | 002 | DONE (design doc `plans/design/export-restore.md`, reviewed; owner decisions AWAITING RATIFICATION) |
 | 017 | SPIKE: multi-window edge validity | P3 | S–M | — (006 for any build) | DONE (design doc `plans/design/multiwindow-validity.md`, reviewed; recommends BUILD Design B — owner decisions AWAITING RATIFICATION) |
 
-**Execution complete 2026-07-08.** All 17 plans executed and reviewed. Code
-chain: `advisor/001` … `advisor/014-doctor-revision` @ `005da77` (12 stacked
-commits on `9182b14`, fast-forwardable, 169 tests green). Merge tip:
-`git merge advisor/014-doctor-revision`. After merging: arm the hook
-(`git config core.hooksPath .githooks`), decide the 4 backfilled tags
-(push or `git tag -d`), and ratify the 5 design docs in `plans/design/`.
+**Execution complete 2026-07-08.** All 17 plans executed and reviewed;
+merged to `main` @ `f1b168a` and pushed (tags v0.3.0/v0.3.1/v0.4.1/v0.4.2
+published; hook armed; CI live). **All five design docs ratified
+2026-07-08 with their recommended options** — the build plans below
+implement them.
+
+## Build plans (second wave, from the ratified designs)
+
+Stacked chain from `main` @ `f1b168a`, in order (each branches from the
+previous — 018/019/020/021 share doc/contract files; 022 is the highest
+blast radius and lands last):
+
+Owner-ratified sequencing (2026-07-08, second pass): **do 018 → 019 → 021;
+defer 020 and 022** with named re-activation triggers.
+
+**Wave 2 complete 2026-07-08.** Merge tip: `git merge advisor/021-export-restore`
+(linear on main @ f1b168a: 00ea59f task arc → 47642df life-docs → 9bfc6fe
+export/restore; 194 tests green).
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 018 | Task arc: props.due + deadlineCandidates + deadlines() + edgesOf() + episode statuses | P1 | M | — (from main) | DONE (`advisor/018-task-arc` @ 00ea59f, reviewed+approved+probes; 180 tests; also fixed the doctor.ts NUL byte) |
+| 019 | HOSTING §12/§13: long-form MD + tables patterns (docs-only; + §11 rebuy sentence + 2 one-line drift fixes from 018's review) | P2 | S | 018 (stacking) | DONE (`advisor/019-life-documents-docs` @ 47642df, reviewed+approved; samples probe-verified) |
+| 021 | export (jsonl/ics/vcard) + Store.restore + honest forget accounting | P2 | M | 019 (stacking — re-based off 020's deferral) | DONE (`advisor/021-export-restore` @ 9bfc6fe, reviewed+approved+probes; 194 tests — WAVE-2 MERGE TIP) |
+| 020 | ReadStore.openReadOnly (compiler-enforced read-only door) | P3 | M | — | DEFERRED (trigger: the first real second-reader process — a dashboard/analytics host. Design + plan ready as written.) |
+| 022 | Multi-window edge validity, Design B (schema v5) | P3 | L | 006-shape | DEFERRED (design doc's own option-D trigger: the first host commit that routes around the CLOSED-triple refusal. The §11 workaround sentence ships via 019.) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale).
