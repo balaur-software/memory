@@ -98,6 +98,59 @@ describe("spine: edges + traversal", () => {
   });
 });
 
+describe("spine: edgesOf — recovering a lost edge id (task-arc plan 018, design §3.2)", () => {
+  test("both directions with correct fields; on_day (system type) included; the recovered id feeds closeEdge; asOf and never-endpoint exclusion", () => {
+    const a = store.createNode({ type: "note", title: "A", origin: "t" });
+    const b = store.createNode({ type: "note", title: "B", origin: "t" });
+    const c = store.createNode({ type: "note", title: "C", origin: "t" });
+    const eAB = store.link(a.id, b.id, "blocked_by");
+    store.link(c.id, a.id, "waiting_on");
+
+    const edges = store.edgesOf(a.id);
+    const ab = edges.find((e) => e.type === "blocked_by");
+    const ca = edges.find((e) => e.type === "waiting_on");
+    expect(ab).toBeDefined();
+    expect(ca).toBeDefined();
+    expect(ab?.source).toBe(a.id);
+    expect(ab?.target).toBe(b.id);
+    expect(ca?.source).toBe(c.id);
+    expect(ca?.target).toBe(a.id);
+    expect(edges.some((e) => e.type === "on_day")).toBe(true); // system types included
+
+    // The recovered id — pulled from edgesOf's OWN return, not link()'s —
+    // feeds closeEdge successfully (the probe-confirmed gap, design §1.2).
+    const recoveredId = edges.find((e) => e.source === a.id && e.target === b.id)?.id;
+    if (recoveredId === undefined) throw new Error("test setup: a->b edge not found via edgesOf");
+    expect(recoveredId).toBe(eAB.id);
+    store.closeEdge(recoveredId);
+    expect(store.edgesOf(a.id).map((e) => e.id)).not.toContain(eAB.id); // dropped from the default (currently-valid) read
+    expect(store.edgesOf(a.id, { asOf: eAB.created }).map((e) => e.id)).toContain(eAB.id); // reappears inside its window
+
+    // never-endpoint exclusion: closing c off never affects a<->c's edge existence, but
+    // marking c 'never' hides the edge (leaking c's id would be surfacing it).
+    store.setSurfacing(c.id, "never");
+    expect(store.edgesOf(a.id).map((e) => e.type)).not.toContain("waiting_on");
+
+    // ask endpoints ARE included (a named-id traversal, not ambient matching).
+    const d = store.createNode({ type: "note", title: "D", origin: "t" });
+    store.setSurfacing(d.id, "ask");
+    const eAD = store.link(a.id, d.id, "links");
+    expect(store.edgesOf(a.id).map((e) => e.id)).toContain(eAD.id);
+  });
+
+  test("type filter narrows the result", () => {
+    const a = store.createNode({ type: "note", title: "A", origin: "t" });
+    const b = store.createNode({ type: "note", title: "B", origin: "t" });
+    store.link(a.id, b.id, "blocked_by");
+    store.link(a.id, b.id, "waiting_on");
+    expect(store.edgesOf(a.id, { type: "blocked_by" }).map((e) => e.type)).toEqual(["blocked_by"]);
+  });
+
+  test("id-gated like history — an unknown node throws not_found", () => {
+    expect(() => store.edgesOf("nope" as NodeId)).toThrow(MemoryError);
+  });
+});
+
 describe("spine: FSM + touch + surfacing", () => {
   test("valid moves work; invalid and guarded targets throw", () => {
     const n = store.createNode({ type: "note", title: "N", origin: "t" });

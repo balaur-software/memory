@@ -5,13 +5,14 @@
  * surface can no longer drift.
  */
 
-import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Conflict, Decision, EditChange, Outcome, Pending, Proposal } from "./consent.ts";
 import * as consent from "./consent.ts";
 import type { DoctorReport, RecallOptions, StoreContract } from "./contract.ts";
 import { doctor as doctorFn } from "./doctor.ts";
 import * as entities from "./entities.ts";
+import { buildExport, type ExportOptions, type ExportReport } from "./export.ts";
 import { rebuildFts } from "./indexdb/fts.ts";
 import * as vectors from "./indexdb/vectors.ts";
 import type { ForgetReport } from "./lifecycle.ts";
@@ -101,6 +102,41 @@ export class Store implements StoreContract {
     return store;
   }
 
+  /** Mechanizes HOSTING.md §10's manual restore recipe into one verb
+   * (design export-restore.md §5.2): place a `backup()` output as
+   * `memory.db` in a fresh directory, open (the schema future-guard
+   * applies for free via `migrateMemoryDb`), `rebuildIndex()` (`index.db`
+   * is never backed up, I13), then verify `PRAGMA integrity_check` and
+   * THROW on failure — an untested backup is a hope, not a backup, and
+   * restore is reconstructing from a previously-unverified external file.
+   * Refuses a missing `backupPath` and a non-empty `dir` (empty/absent is
+   * fine); never overwrites. Audited content-free: `{activeCount,
+   * integrityOk}`, no paths. */
+  static restore(backupPath: string, dir: string): Store {
+    if (!existsSync(backupPath)) throw new MemoryError("not_found", `no backup file at ${backupPath}`);
+    if (existsSync(dir) && readdirSync(dir).length > 0)
+      throw new MemoryError("conflict", "restore target directory is not empty — restore never overwrites");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const dest = join(dir, "memory.db");
+    copyFileSync(backupPath, dest);
+    chmodSync(dest, 0o600);
+    const store = Store.open({ dir });
+    store.rebuildIndex();
+    const report = store.doctor();
+    if (!report.integrityOk) {
+      store.close();
+      throw new MemoryError(
+        "conflict",
+        "restored file failed PRAGMA integrity_check — refusing to hand back a corrupt store",
+      );
+    }
+    spine.audit(store.ctx, "owner", "store.restore", "", true, {
+      activeCount: report.activeCount,
+      integrityOk: report.integrityOk,
+    });
+    return store;
+  }
+
   close(): void {
     this.open_ = false;
     this.ctx.mem.close();
@@ -159,6 +195,12 @@ export class Store implements StoreContract {
 
   neighborhood(id: NodeId, asOf?: string): Node[] {
     return spine.neighborhood(this.guard(), id, asOf);
+  }
+
+  /** Recover an edge id a host didn't persist (design task-arc.md §3.2) —
+   * both directions, never-endpoints excluded, currently-valid by default. */
+  edgesOf(id: NodeId, opts?: { type?: string; asOf?: string }): Edge[] {
+    return spine.edgesOf(this.guard(), id, opts);
   }
 
   // --- lifecycle primitives (Phase 1 scope) ---
@@ -220,8 +262,20 @@ export class Store implements StoreContract {
     return recallMod.agenda(this.guard(), from, to, opts);
   }
 
-  /** The episodic-past window — "what happened in March" (review-3 G1). */
-  episode(from: string, to: string, opts?: { type?: string; limit?: number }): Node[] {
+  /** The props.due window — mirrors agenda() but reads the blessed
+   * deadline convention (PLANNING.md's Hosting conventions addendum). */
+  deadlines(from: string, to: string, opts?: { type?: string; limit?: number }): Node[] {
+    return recallMod.deadlines(this.guard(), from, to, opts);
+  }
+
+  /** The episodic-past window — "what happened in March" (review-3 G1).
+   * `statuses` (design task-arc.md §3.3) widens beyond active; the time
+   * axis stays CREATED, never updated. */
+  episode(
+    from: string,
+    to: string,
+    opts?: { type?: string; limit?: number; statuses?: readonly Status[] },
+  ): Node[] {
     return recallMod.episode(this.guard(), from, to, opts);
   }
 
@@ -323,14 +377,16 @@ export class Store implements StoreContract {
     rebuildFts(ctx.idx, ctx.mem);
   }
 
-  // --- backup (SCHEMA.md "Backup and restore"; review-3 G5) ---
+  // --- backup, export, restore (SCHEMA.md "Backup and restore"; review-3 G5) ---
 
   /** Snapshot the record via VACUUM INTO: WAL-safe (reads a consistent
    * snapshot including un-checkpointed writes, without blocking), and the
    * output is compacted and forensically clean. Refuses an existing
    * target — backups never overwrite — and refuses a target inside the
    * live store directory. A VACUUM INTO that fails mid-write is cleaned up
-   * rather than left as a wedged partial file. Audited content-free. */
+   * rather than left as a wedged partial file. Audited content-free.
+   * Restore: `Store.restore(backupPath, dir)` mechanizes the manual
+   * recipe (place as memory.db in a fresh dir, open, rebuildIndex()). */
   backup(toPath: string): void {
     const ctx = this.guard();
     const resolved = resolve(toPath);
@@ -346,5 +402,32 @@ export class Store implements StoreContract {
     }
     chmodSync(resolved, 0o600); // backups carry the same privacy as the record
     spine.audit(ctx, "owner", "store.backup", "", true, {});
+  }
+
+  /** Portable export — JSONL (full fidelity), ICS (VEVENTs), or vCard
+   * (person nodes); hand-rolled zero-dep emitters (design
+   * export-restore.md). Consent-filtered at the row level: active+
+   * archived, always+ask by default; `never`/quarantined only behind
+   * explicit opt-in flags. Refuses an existing target and a target inside
+   * the store directory — mirrors `backup()` exactly. A write that fails
+   * mid-way is cleaned up rather than left as a partial file. Audited
+   * content-free: format + per-stream counts, never content. */
+  export(toPath: string, opts: ExportOptions): ExportReport {
+    const ctx = this.guard();
+    const resolved = resolve(toPath);
+    if (dirname(resolved) === resolve(this.dir_))
+      throw new MemoryError("props_invalid", "export target cannot live inside the store directory");
+    if (existsSync(resolved))
+      throw new MemoryError("conflict", "export target already exists — export never overwrites");
+    const { content, counts } = buildExport(ctx, opts);
+    try {
+      writeFileSync(resolved, content);
+    } catch (e) {
+      rmSync(resolved, { force: true }); // a partial export is worse than none
+      throw e;
+    }
+    chmodSync(resolved, 0o600); // exports carry the same privacy as the record
+    spine.audit(ctx, "owner", "store.export", "", true, { format: opts.format, ...counts });
+    return { format: opts.format, counts };
   }
 }

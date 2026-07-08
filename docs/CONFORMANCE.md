@@ -49,14 +49,20 @@ can reimplement):
   expectations reference (`@name` / `@name.id`).
 - `expect` entries assert bound values (`bound`), ranked reads (`recall`,
   `entityContext`), gate outcomes (`outcome`), hint sets (`conflicts`),
-  forget reports (`report`), traversals (`neighborhood`) — or **raw SQL
-  against memory.db / index.db** (`sql` / `sqlIndex`): the contract is the
-  database, so the assertions read the database. `neighborhood` and
-  `entityContext` take an optional `asOf` (TEMPORAL.md time travel);
-  `history` asserts snapshot replays (length / bodiesInOrder / actions /
-  origins / whens); `agenda` and `episode` assert a window's titles in
-  order; `children` asserts a dashboard read with stated statuses
-  (PLANNING.md).
+  forget reports (`report`), traversals (`neighborhood`, `edgesOf`) — or
+  **raw SQL against memory.db / index.db** (`sql` / `sqlIndex`): the
+  contract is the database, so the assertions read the database.
+  `neighborhood` and `entityContext` take an optional `asOf` (TEMPORAL.md
+  time travel); `history` asserts snapshot replays (length / bodiesInOrder
+  / actions / origins / whens); `agenda`, `episode`, and `deadlines` assert
+  a window's titles in order (`episode` also takes an optional `statuses`,
+  mirroring `children`'s, PLANNING.md's Hosting conventions addendum);
+  `children` asserts a dashboard read with stated statuses (PLANNING.md);
+  `edgesOf` asserts the both-direction edge set touching a bound node by
+  type/source/target (refs resolved the same way `sql` params are), with
+  an optional `asOf`. `report`'s `equals` resolves `@name`/`@name.id` refs
+  recursively (needed for id-array fields like `deadlineCandidates`), the
+  same way `sql`/`sqlIndex` params do.
 - `clock` (plus optional per-step `advanceMs`) makes time-dependent
   behavior (recency decay, review_at, staleness) deterministic.
 
@@ -87,6 +93,9 @@ can reimplement):
 | `I16-history-forget` | **I16**: the three capture moments replayed; history dies with the tombstone; audit survives |
 | `planning-tuesday` | **I17**: declared appointments, the gated task flow, agenda windows + I2, reschedule replay, day anchors |
 | `project-dashboard` | children with stated statuses (I2), propsPatch no-clobber, the owner fast path, the episode window |
+| `planning-deadlines` | the props.due convention (I2): `deadlineCandidates` + `deadlines()` window, malformed-due-never-surfaces |
+| `edges-of` | `edgesOf`: both directions, closeEdge reflected, asOf time travel (I15), never-endpoint exclusion (I2) |
+| `episode-statuses` | `episode()`'s `statuses` option (I2): widening beyond active on the CREATED-time axis |
 
 Sixteen of seventeen invariants are scenario-pinned. The remaining one:
 
@@ -96,9 +105,11 @@ Sixteen of seventeen invariants are scenario-pinned. The remaining one:
 
 Every invariant with a possible producer has one.
 
-The `doctor()` report is covered by unit tests (`src/doctor.test.ts`)
-rather than scenarios — it reads state and never mutates, so there is no
-invariant to pin, only math and wording to keep honest.
+The `doctor()` report is covered by both unit tests (`src/doctor.test.ts`)
+and scenarios — `doctor-revision` exercises the `doctor` op directly, and
+`planning-deadlines` asserts `deadlineCandidates` through it. It reads
+state and never mutates, so there is no invariant to pin on it alone,
+only math and wording to keep honest.
 
 ## Rules
 

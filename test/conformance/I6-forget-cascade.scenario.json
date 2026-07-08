@@ -171,11 +171,6 @@
       "equals": ["host:recap:d1"]
     },
     {
-      "report": "f1",
-      "path": "needsOwner",
-      "contains": "external:prior-exports"
-    },
-    {
       "outcome": "s1",
       "equals": "1"
     },

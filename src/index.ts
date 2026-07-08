@@ -16,6 +16,7 @@ export type {
   StoreContract,
 } from "./contract.ts";
 export type { EntityContext, IdentityEvidence, Peer } from "./entities.ts";
+export type { ExportFormat, ExportOptions, ExportReport } from "./export.ts";
 export type { ForgetReport } from "./lifecycle.ts";
 export { DEFAULT_RANKING, termsFromText } from "./recall.ts";
 export type { HistorySnapshot, Validity } from "./spine.ts";

@@ -49,9 +49,13 @@ export interface ForgetReport {
    * silently claimed: possible prose mentions in other nodes
    * ("mention:<id>", best-effort lexical candidates on the forgotten
    * title's words), merged husks chained INTO this node ("husk:<id>" —
-   * they still hold content and just lost their survivor), and the
-   * standing truth that prior exports/backups may retain the content
-   * ("external:prior-exports"). */
+   * they still hold content and just lost their survivor), and a real
+   * count of this store's successful `export()` calls ("external:
+   * exports:<n>", present only when N > 0 — design export-restore.md
+   * §6). Not counted here: `backup()` output (deferred,
+   * `external:backups:<n>` is a follow-up, not this cascade) and any
+   * copy that left via cp/rsync/a filesystem snapshot outside the
+   * library's own verbs — out of contract (SCHEMA.md). */
   readonly needsOwner: readonly string[];
 }
 
@@ -90,7 +94,12 @@ export function forget(ctx: Ctx, id: NodeId): ForgetReport {
   )) {
     needsOwner.push(`husk:${r.source}`);
   }
-  needsOwner.push("external:prior-exports");
+  // A real count, not boilerplate (design export-restore.md §6): only
+  // present when this store has actually exported something.
+  const exportCount =
+    ctx.mem.get<{ c: number }>("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'store.export' AND ok = 1")
+      ?.c ?? 0;
+  if (exportCount > 0) needsOwner.push(`external:exports:${exportCount}`);
 
   let edgesDropped = 0;
   let flaggedStale: string[] = [];

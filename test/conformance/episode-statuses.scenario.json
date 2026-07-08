@@ -1,0 +1,29 @@
+{
+  "name": "episode(): statuses option widens the creation-time window beyond active (task-arc plan 018, design §3.3)",
+  "invariants": ["I2"],
+  "clock": "2026-07-05T12:00:00.000Z",
+  "steps": [
+    { "op": "registerType", "name": "task", "bornStatus": "active" },
+    {
+      "op": "createNode",
+      "as": "openOne",
+      "input": { "type": "task", "title": "Still open", "origin": "o" }
+    },
+    {
+      "op": "createNode",
+      "as": "doneOne",
+      "input": { "type": "task", "title": "Filed report", "origin": "o" }
+    },
+    { "op": "updateNode", "id": "@doneOne.id", "patch": { "propsPatch": { "outcome": "done" } } },
+    { "op": "transition", "id": "@doneOne.id", "to": "archived" }
+  ],
+  "expect": [
+    { "episode": ["2026-07-05", "2026-07-06"], "titlesInOrder": ["Still open"] },
+    { "episode": ["2026-07-05", "2026-07-06"], "statuses": ["archived"], "titlesInOrder": ["Filed report"] },
+    {
+      "episode": ["2026-07-05", "2026-07-06"],
+      "statuses": ["active", "archived"],
+      "titlesInOrder": ["Still open", "Filed report"]
+    }
+  ]
+}
