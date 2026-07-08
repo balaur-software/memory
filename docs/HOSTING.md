@@ -282,7 +282,7 @@ day, then `dayAnchor(localDayAsUtcDate)` and pass `agenda`/`episode`
 windows built from local-midnight converted to UTC. The library will
 never guess a timezone for you; that is a feature.
 
-## 10 · Backup (the procedure, not a suggestion)
+## 10 · Backup, export, and restore (the procedure, not a suggestion)
 
 ```ts
 store.backup(`${backupDir}/memory-${stamp}.db`);   // VACUUM INTO: WAL-safe, compacted, never overwrites
@@ -292,17 +292,63 @@ store.backup(`${backupDir}/memory-${stamp}.db`);   // VACUUM INTO: WAL-safe, com
 - **Never raw-copy `memory.db` while the store is open** — the WAL holds
   recent writes your copy would silently lose. Raw copy is safe only
   after `close()`.
-- `index.db` is never backed up — it is disposable (I13). Restore =
-  place the backup as `memory.db` in a fresh dir, `Store.open`,
-  `rebuildIndex()`.
-- Verify by opening: restore into a temp dir on a schedule and check
-  `doctor().integrityOk` — an untested backup is a hope, not a backup.
+- `index.db` is never backed up — it is disposable (I13).
 - Keep generations (daily/weekly/monthly) on separate media; the file is
   small (personal scale) and `VACUUM INTO` output compresses well.
 - Backups are private by default: `backup()` chmods its output to 0600
   (POSIX; a no-op on Windows), matching the store directory (0700) and
   `memory.db`/`index.db` themselves — check your backup media's own
   permissions too.
+
+**Restore is one verb**, not a manual recipe — `Store.restore(backupPath,
+dir)` places the backup as `memory.db` in a fresh directory, opens it,
+`rebuildIndex()`s, then runs `PRAGMA integrity_check` itself and THROWS
+(`conflict`) rather than handing back a corrupt store — an untested
+backup is a hope, not a backup, so restore verifies for you instead of
+leaving it as a separately-scheduled habit:
+
+```ts
+const restored = Store.restore(`${backupDir}/memory-${stamp}.db`, "/path/to/fresh-dir");
+// restored.doctor().integrityOk is already true here — restore() throws otherwise
+restored.close();
+```
+
+- Refuses a missing `backupPath` (`not_found`) and a non-empty target
+  `dir` (`conflict`) — an absent or empty `dir` is fine, restore creates
+  it (mode 0700) and the restored `memory.db` lands at mode 0600.
+- Still worth doing periodically even so: restoring into a scratch dir on
+  a schedule exercises the whole path (not just the file), catching
+  problems `PRAGMA integrity_check` alone can't (a stale/wrong backup
+  file, a media failure short of corruption).
+
+**Export** is portability, not backup — a consent-filtered, human/
+external-tool-readable copy, never a substitute for `backup()` (which
+captures everything, `never`-surfaced rows included, with zero
+filtering):
+
+```ts
+store.export(`${exportDir}/memory.jsonl`, { format: "jsonl" });      // archival: nodes+edges+aliases+derivations
+store.export(`${exportDir}/agenda.ics`, { format: "ics" });          // when_at-bearing appointments, active+always
+store.export(`${exportDir}/contacts.vcf`, { format: "vcard" });      // type='person' nodes as vCards
+```
+
+- Same refusal shape as `backup()`: the target must not exist and must
+  not live inside the store directory.
+- Consent-filtered by default (SCHEMA.md "Export"): `active`+`archived`
+  status, `always`+`ask` surfacing. `surfacing='never'` and
+  `status='quarantined'` rows need explicit opt-in
+  (`{ includeNever: true }` / `{ includeQuarantined: true }`) — export is
+  an owner-only verb (never agent-reachable, same tier as `backup`), but
+  the sensitive tiers still require a deliberate flag, not a default.
+  `memory_history`/`audit_log` are JSONL-only opt-ins
+  (`includeHistory`/`includeAuditLog`), default off.
+- `ExportReport.counts` gives per-stream row counts (JSONL:
+  node/edge/alias/derivation/…; ICS: event; vCard: card) — log it or
+  show it to the owner as a receipt.
+- Every successful export is one content-free `store.export` audit row;
+  `forget()`'s report counts them honestly (`external:exports:<n>`, only
+  present once this store has actually exported something — HOSTING.md's
+  Errors table and SCHEMA.md's I6 both apply as usual).
 
 ## 11 · Net worth (point-in-time holdings)
 

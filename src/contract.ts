@@ -10,6 +10,7 @@
 
 import type { Conflict, Decision, Outcome, Pending, Proposal } from "./consent.ts";
 import type { EntityContext } from "./entities.ts";
+import type { ExportOptions, ExportReport } from "./export.ts";
 import type { ForgetReport } from "./lifecycle.ts";
 import type { HistorySnapshot, Validity } from "./spine.ts";
 import type { Edge, EdgeId, Node, NodeId, NodeTypeSpec, Props, Status, Surfacing } from "./types.ts";
@@ -228,10 +229,19 @@ export interface StoreContract {
   /** Snapshot the record to a new file via VACUUM INTO — WAL-safe (a
    * consistent snapshot without blocking writers), compacted, clean.
    * The target must not exist: backups never overwrite. index.db is not
-   * backed up (disposable, I13); restore = place the file as memory.db in
-   * a fresh dir, open, rebuildIndex(). NEVER raw-copy memory.db while the
-   * store is open — the WAL holds recent writes the copy would lose. */
+   * backed up (disposable, I13); restore via the static
+   * `Store.restore(backupPath, dir)`, which mechanizes the recipe (place
+   * as memory.db in a fresh dir, open, rebuildIndex()). NEVER raw-copy
+   * memory.db while the store is open — the WAL holds recent writes the
+   * copy would lose. */
   backup(toPath: string): void;
+  /** Portable export (JSONL/ICS/vCard) — hand-rolled zero-dep emitters,
+   * consent-filtered at the row level: active+archived, always+ask by
+   * default; `never`/quarantined only behind explicit opt-in flags
+   * (design export-restore.md §2/§3). Mirrors `backup()`'s own refusal
+   * shape: the target must not exist and must not live inside the store
+   * directory. Audited content-free: format + per-stream counts only. */
+  export(toPath: string, opts: ExportOptions): ExportReport;
   /** Metadata-only health report — reports, never acts. */
   doctor(now?: Date): DoctorReport;
 }

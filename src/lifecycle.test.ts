@@ -1,5 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshStore } from "../test/helpers.ts";
 import type { Store } from "./store.ts";
@@ -77,7 +79,8 @@ describe("forget (I6): the honest cascade", () => {
     expect(report.indexScrubbed).toBe(true);
     expect(report.flaggedStale).toEqual(["host:recap:2026-07-04"]);
     expect(report.needsOwner.some((r) => r === `mention:${other.id}`)).toBe(true); // best-effort prose hint
-    expect(report.needsOwner).toContain("external:prior-exports");
+    // this store never exported anything — no boilerplate export line (design export-restore.md §6)
+    expect(report.needsOwner.some((r) => r.startsWith("external:exports:"))).toBe(false);
 
     const t = store.getNode(fact.id);
     expect(t.status).toBe("forgotten");
@@ -125,6 +128,31 @@ describe("forget (I6): the honest cascade", () => {
     const quar = activeMem("Hidden thing");
     store.quarantine(quar.id);
     expect(store.forget(quar.id).tombstoned).toBe(quar.id); // quarantined is forgettable
+  });
+
+  test("the export honesty hook: a real count, not boilerplate (design export-restore.md §6)", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "bm-lifecycle-export-"));
+    try {
+      store.export(join(scratch, "one.jsonl"), { format: "jsonl" });
+      store.export(join(scratch, "two.jsonl"), { format: "jsonl" });
+      // simulate a failed export attempt landing in the ledger as ok=0 —
+      // export() itself never writes a failure row (mirrors backup()), so
+      // this is the same synthetic-row technique the design's own probe
+      // used to prove the query's `AND ok = 1` clause excludes it.
+      const db = new Database(join(dir, "memory.db"));
+      db.run(
+        "INSERT INTO audit_log (id, at, actor, action, ref, ok, meta) VALUES (?, ?, 'owner', ?, '', 0, '{}')",
+        ["01jzzzzzzzzzzzzzzzzzzzzzz9", new Date().toISOString(), "store.export"],
+      );
+      db.close();
+
+      const n = activeMem("Countable fact");
+      const report = store.forget(n.id);
+      expect(report.needsOwner).toContain("external:exports:2");
+      expect(report.needsOwner.filter((r) => r.startsWith("external:exports:"))).toHaveLength(1);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
 

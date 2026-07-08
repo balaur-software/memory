@@ -99,7 +99,8 @@ CREATE TABLE audit_log (
   id     TEXT PRIMARY KEY,
   at     TEXT NOT NULL,
   actor  TEXT NOT NULL CHECK (actor IN ('owner','agent','system')),
-  action TEXT NOT NULL,             -- "node.create", "consent.approve", "forget.cascade", ...
+  action TEXT NOT NULL,             -- "node.create", "consent.approve", "forget.cascade",
+                                     -- "store.backup", "store.export", "store.restore", ...
   ref    TEXT NOT NULL DEFAULT '',  -- node/edge id — never content
   ok     INTEGER NOT NULL DEFAULT 1 CHECK (ok IN (0,1)),
   meta   TEXT NOT NULL DEFAULT '{}' -- ids, counts, flags — never quoted text
@@ -255,8 +256,13 @@ nodes.
   own files rather than merely unlinked. Out of contract and NOT addressed
   by any of this: filesystem- or SSD-level remanence (wear leveling,
   journaling filesystems, OS-level snapshots) and any copy that already
-  left the store — that is exactly what `needsOwner`'s
-  `external:prior-exports` names.
+  left the store via `export()` — `needsOwner` names this honestly as a
+  real count, `external:exports:<n>`, present only when this store has
+  actually called `export()` successfully (`n` = the count of successful
+  `store.export` audit rows) — never a boilerplate line on a store that
+  has exported nothing. `backup()` output is not counted here (a
+  deliberately deferred follow-up), nor is any copy that left via
+  `cp`/`rsync`/a filesystem snapshot outside the library's own verbs.
 - **I7 — Content-free forget audit.** Audit entries for forget-class actions
   carry ids and counts only. No audit row anywhere carries node title/body
   text.
@@ -322,11 +328,16 @@ nodes.
   recent writes in `memory.db-wal`; copying the main file alone silently
   loses them. A raw copy is safe only after `close()`.
 - **Restore** = place the backup file as `memory.db` in a fresh directory,
-  open, `rebuildIndex()`. `index.db` is never backed up — it is disposable
-  by contract (I13).
+  open, `rebuildIndex()`; `index.db` is never backed up — it is disposable
+  by contract (I13). `Store.restore(backupPath, dir)` mechanizes exactly
+  this recipe as one verb (see HOSTING.md §10): refuses a missing
+  `backupPath` and a non-empty `dir`, then — unlike the old manual
+  recipe — runs `PRAGMA integrity_check` itself and THROWS rather than
+  handing back a corrupt store.
 - **Verify backups by opening them** — an untested backup is a hope, not a
   backup. `doctor().integrityOk` runs `PRAGMA integrity_check` on the live
-  record; run it on a restored copy too.
+  record; `Store.restore()` runs the same check on every restore and
+  refuses on failure, so a restored copy is verified by construction.
 - **Files from the future refuse to open.** A `memory.db` whose
   `schema_version` exceeds what the build knows throws on open — upgrade
   the library, never downgrade the file. (Older files upgrade in place,
@@ -341,7 +352,72 @@ nodes.
   backup taken before a forget still holds the forgotten content; that
   copy left the store's honesty contract the moment it was written, and
   managing it (rotating it out, re-running backups after a forget) is the
-  owner's responsibility, same as any other `external:prior-exports`.
+  owner's responsibility. Unlike `export()` (see I6 above,
+  `external:exports:<n>`), `backup()` output is NOT counted in
+  `forget()`'s report — a deliberately deferred follow-up
+  (`external:backups:<n>`), not a claim this doc makes today.
+
+## Export (portable, consent-filtered)
+
+`export(toPath, opts)` (design `plans/design/export-restore.md`) is a
+read, not a write contract — nothing here is a new invariant. Three
+formats, one verb (`opts.format`), all hand-rolled with zero dependencies.
+Consent-filtered at the row level, never post-hoc: default status
+`active`+`archived`, surfacing `always`+`ask`; `surfacing='never'` and
+`status='quarantined'` rows are excluded unless `includeNever`/
+`includeQuarantined` opt in. An edge is emitted only when **both**
+endpoints passed the node filter (the same discovery-prevention rule
+`neighborhood`/`edgesOf` already apply).
+
+**JSONL** (archival, full fidelity) — one JSON object per line, a
+`"stream"` discriminator first, then the columns above verbatim
+(snake_case, matching the SQL column names exactly — `props` as its raw
+stored JSON string, not re-nested, so a line is byte-for-byte
+reconstructible modulo the `stream` tag):
+
+```
+{"stream":"node","id":...,"type":...,"title":...,"body":...,"status":...,
+ "surfacing":...,"importance":...,"props":...,"origin":...,"author":...,
+ "use_count":...,"last_used":...,"review_at":...,"when_at":...,
+ "created":...,"updated":...}
+{"stream":"edge","id":...,"source":...,"target":...,"type":...,
+ "context":...,"created":...,"valid_from":...,"valid_until":...}
+{"stream":"alias","alias":...,"node_id":...,"source":...,"created":...}
+{"stream":"derivation","artifact":...,"source":...,"stale":...,"created":...}
+{"stream":"history","node_id":...,"seq":...,"title":...,"body":...,
+ "props":...,"when_at":...,"actor":...,"action":...,"origin":...,"at":...}
+{"stream":"audit","id":...,"at":...,"actor":...,"action":...,"ref":...,
+ "ok":...,"meta":...}
+```
+
+The `node` stream includes every node type (`day` anchors too — a JSONL
+dump is a full archival copy, not an agenda). `history` (I16, opt-in via
+`includeHistory`) and `audit` (opt-in via `includeAuditLog`) default off:
+history is content-bearing (arguably more sensitive than current state —
+same opt-in tier as `never`), and the audit log is operational, not
+memory. A `derivations` row is included when each side that IS a node id
+passed the filter; an opaque host ref (e.g. `"host:recap:2026-07-04"`)
+passes through unfiltered — it isn't a node id and carries no node
+content.
+
+**ICS** (RFC 5545 VEVENTs) is structurally an agenda dump: the default
+mirrors `agenda()`'s own I17 filter exactly (`status='active' AND
+surfacing='always'`, `when_at IS NOT NULL`), tighter than JSONL's general
+baseline. `includeArchived`/`includeAsk` widen it; `surfacing='never'` is
+**never** reachable from an ICS export regardless of flags — there is no
+legitimate reason to hand a `never`-surfaced appointment to a third-party
+calendar app.
+
+**vCard** (RFC 6350) covers `type='person'` nodes only, mirroring the
+general JSONL surfacing default; aliases render as one `NICKNAME` line
+each, including merge-derived ones (`source='merge'`). A `merged` husk
+never gets a card of its own (excluded by the same status filter as
+everything else).
+
+Every successful export writes one content-free `store.export` audit row
+(`meta: {format, ...counts}` — a format string and per-stream counts,
+never content, per the `meta` column's own "ids, counts, flags" rule
+above) — the ledger `forget()`'s report counts honestly (see I6 above).
 
 ## Deliberate schema choices
 
